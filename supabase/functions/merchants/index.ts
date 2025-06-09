@@ -19,6 +19,7 @@ interface Merchant {
   default_currency?: string;
   default_token_id?: string;
   default_language?: string;
+  updated_at?: string;
 }
 
 // Upsert merchant function
@@ -49,6 +50,7 @@ async function upsertMerchant(supabase: any, merchantData: Merchant) {
       cleanData.default_language = merchantData.default_language;
     }
 
+    cleanData.updated_at = new Date().toISOString();  
     const { data, error } = await supabase
       .from("merchants")
       .upsert(cleanData, { onConflict: "dynamic_id", ignoreDuplicates: false })
