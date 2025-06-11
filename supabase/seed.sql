@@ -4,12 +4,13 @@ SET session_replication_role = replica;
 -- PostgreSQL database dump
 --
 
--- Dumped from database version 15.8
--- Dumped by pg_dump version 15.8
+-- Dumped from database version 17.4
+-- Dumped by pg_dump version 17.4
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
@@ -112,8 +113,11 @@ SET row_security = off;
 -- Data for Name: currencies; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-INSERT INTO "public"."currencies" ("currency_id", "display_name") VALUES
-	('MYR', 'Malaysian Ringgit');
+INSERT INTO "public"."currencies" ("currency_id", "display_name", "usd_price") VALUES
+	('MYR', 'Malaysian Ringgit', 0.24),
+	('SGD', 'Singapore Dollar', 0.78),
+	('USD', 'United States Dollar', 1),
+	('IDR', 'Indonesian Rupiah', 0.000062);
 
 
 --
@@ -121,6 +125,15 @@ INSERT INTO "public"."currencies" ("currency_id", "display_name") VALUES
 --
 
 INSERT INTO "public"."languages" ("language_id", "display_name") VALUES
+	('ZH', 'Chinese (Mandarin)'),
+	('HI', 'Hindi'),
+	('ES', 'Spanish'),
+	('FR', 'French'),
+	('AR', 'Arabic'),
+	('BN', 'Bengali'),
+	('RU', 'Russian'),
+	('PT', 'Portuguese'),
+	('ID', 'Indonesian'),
 	('EN', 'English');
 
 
