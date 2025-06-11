@@ -177,6 +177,10 @@ serve(async (req: Request) => {
     const updateData: Partial<OrderRecord> = {
       status: newStatus,
       callback_payload: webhookEvent,
+      source_txn_hash: webhookEvent.payment.source?.txHash,
+      source_chain_name: webhookEvent.payment.source?.chainId,
+      source_token_address: webhookEvent.payment.source?.tokenAddress,
+      source_token_amount: Number(webhookEvent.payment.source?.amountUnits),
       updated_at: new Date().toISOString()
     };
 
