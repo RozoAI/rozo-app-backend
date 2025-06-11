@@ -2,6 +2,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { extractBearerToken, verifyDynamicJWT } from "./utils.ts";
 
+const DEFAULT_TOKEN_ID = "USDC_BASE";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -29,7 +31,8 @@ async function upsertMerchant(supabase: any, merchantData: Merchant) {
       dynamic_id: merchantData.dynamic_id,
     };
 
-    if (merchantData.email) cleanData.email = merchantData.email;
+    cleanData.email = merchantData.email;
+    cleanData.default_token_id = merchantData.default_token_id;
     if (merchantData.display_name) {
       cleanData.display_name = merchantData.display_name;
     }
@@ -43,14 +46,12 @@ async function upsertMerchant(supabase: any, merchantData: Merchant) {
     if (merchantData.default_currency) {
       cleanData.default_currency = merchantData.default_currency;
     }
-    if (merchantData.default_token_id) {
-      cleanData.default_token_id = merchantData.default_token_id;
-    }
+
     if (merchantData.default_language) {
       cleanData.default_language = merchantData.default_language;
     }
 
-    cleanData.updated_at = new Date().toISOString();  
+    cleanData.updated_at = new Date().toISOString();
     const { data, error } = await supabase
       .from("merchants")
       .upsert(cleanData, { onConflict: "dynamic_id", ignoreDuplicates: false })
@@ -104,23 +105,12 @@ async function handleGet(_request: Request, supabase: any, dynamicId: string) {
 }
 
 // POST handler with upsert
-async function handlePost(request: Request, supabase: any, dynamicId: string) {
+async function handlePost(request: Request, supabase: any, payload: any) {
   try {
     const requestData: Merchant = await request.json();
-    requestData.dynamic_id = dynamicId;
-
-    if (requestData.email) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(requestData.email)) {
-        return Response.json(
-          { success: false, error: "Invalid email format" },
-          {
-            status: 400,
-            headers: corsHeaders,
-          },
-        );
-      }
-    }
+    requestData.dynamic_id = payload.sub;
+    requestData.email = payload.email;
+    requestData.default_token_id = DEFAULT_TOKEN_ID;
 
     // Upsert merchant
     const result = await upsertMerchant(supabase, requestData);
@@ -207,14 +197,14 @@ serve(async (req) => {
 
     const supabase = createClient(
       SUPABASE_URL,
-      SUPABASE_SERVICE_ROLE_KEY
+      SUPABASE_SERVICE_ROLE_KEY,
     );
 
     switch (req.method) {
       case "GET":
         return await handleGet(req, supabase, dynamicId);
       case "POST":
-        return await handlePost(req, supabase, dynamicId);
+        return await handlePost(req, supabase, tokenVerification.payload);
       default:
         return Response.json({ error: `Method ${req.method} not allowed` }, {
           status: 405,
