@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { extractBearerToken, verifyDynamicJWT } from "./utils.ts";
+import { createDaimoPaymentLink } from "./daimoPay.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,6 +10,8 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
 };
 
+const INTENT_TITLE = "Rozo";
+
 interface OrderData {
   merchant_id: string;
   payment_id: string;
@@ -16,10 +19,7 @@ interface OrderData {
   merchant_chain_id: string;
   merchant_address: string;
   display_currency: string;
-  source_txn_hash: string;
-  source_chain_name: string;
-  source_token_address: string;
-  source_token_amount: number;
+  display_amount: number;
 }
 
 interface Order extends OrderData {
@@ -29,8 +29,18 @@ interface Order extends OrderData {
   status?: string;
 }
 
+interface CreateOrderRequest {
+  display_currency: string;
+  display_amount: number;
+  description?: string;
+}
+
 // Validate merchant and create order
-async function createOrder(supabase: any, orderData: OrderData) {
+async function createOrder(
+  supabase: any,
+  dynamicId: string,
+  orderData: CreateOrderRequest,
+) {
   try {
     // First, verify if merchant exists and get token info
     const { data: merchant, error: merchantError } = await supabase
@@ -41,7 +51,7 @@ async function createOrder(supabase: any, orderData: OrderData) {
         wallet_address,
         tokens!inner(chain_id, token_address)
       `)
-      .eq("merchant_id", orderData.merchant_id)
+      .eq("dynamic_id", dynamicId)
       .single();
 
     if (merchantError || !merchant) {
@@ -51,26 +61,48 @@ async function createOrder(supabase: any, orderData: OrderData) {
       };
     }
 
-    // Verify merchant wallet address matches
-    if (merchant.wallet_address !== orderData.merchant_address) {
+    const { data: currency, error } = await supabase
+      .from("currencies")
+      .select("usd_price")
+      .eq("currency_id", orderData.display_currency)
+      .single();
+    if (error || !currency) {
       return {
         success: false,
-        error: "Merchant address does not match registered wallet address",
+        error: "Currency not found",
       };
     }
+    const required_amount_usd = currency.usd_price * orderData.display_amount;
 
-    // Verify chain_id matches merchant's default token chain_id
-    if (merchant.tokens.chain_id !== orderData.merchant_chain_id) {
+    if (required_amount_usd < 0.01) {
       return {
         success: false,
-        error: "Chain ID does not match merchant's default token chain",
+        error: "Cannot create order with amount less than 0.01",
       };
     }
+    const paymentLink = await createDaimoPaymentLink(
+      INTENT_TITLE,
+      merchant.wallet_address,
+      Number(merchant.tokens.chain_id),
+      merchant.tokens.token_address,
+      required_amount_usd.toString(),
+    );
 
+    if (!paymentLink.success) {
+      return {
+        success: false,
+        error: paymentLink.error,
+      };
+    }
     // Create the order with required_token from merchant's default token
     const orderToInsert: Order = {
       ...orderData,
-      required_token: merchant.tokens.token_address, // Set from merchant's default token
+      merchant_id: merchant.merchant_id,
+      payment_id: paymentLink.paymentId,
+      merchant_chain_id: merchant.tokens.chain_id,
+      merchant_address: merchant.wallet_address,
+      required_amount_usd: required_amount_usd,
+      required_token: merchant.tokens.token_address,
       status: "PENDING",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -91,7 +123,7 @@ async function createOrder(supabase: any, orderData: OrderData) {
 
     return {
       success: true,
-      order: order,
+      payment_url: paymentLink.paymentUrl,
     };
   } catch (error) {
     return {
@@ -234,27 +266,22 @@ async function handleGetAllOrders(
   }
 }
 
-// POST create order (no JWT required)
-async function handleCreateOrder(request: Request, supabase: any) {
+async function handleCreateOrder(
+  request: Request,
+  supabase: any,
+  dynamicId: string,
+) {
   try {
-    const orderData: OrderData = await request.json();
+    const orderData: CreateOrderRequest = await request.json();
 
     // Validate required fields
     const requiredFields = [
-      "merchant_id",
-      "payment_id",
-      "required_amount_usd",
-      "merchant_chain_id",
-      "merchant_address",
       "display_currency",
-      "source_txn_hash",
-      "source_chain_name",
-      "source_token_address",
-      "source_token_amount",
+      "display_amount",
     ];
 
     for (const field of requiredFields) {
-      if (!orderData[field as keyof OrderData]) {
+      if (!orderData[field as keyof CreateOrderRequest]) {
         return Response.json(
           { success: false, error: `Missing required field: ${field}` },
           {
@@ -267,13 +294,13 @@ async function handleCreateOrder(request: Request, supabase: any) {
 
     // Validate numeric fields
     if (
-      typeof orderData.required_amount_usd !== "number" ||
-      orderData.required_amount_usd <= 0
+      typeof orderData.display_amount !== "number" ||
+      orderData.display_amount <= 0
     ) {
       return Response.json(
         {
           success: false,
-          error: "required_amount_usd must be a positive number",
+          error: "display_amount must be a positive number",
         },
         {
           status: 400,
@@ -282,24 +309,7 @@ async function handleCreateOrder(request: Request, supabase: any) {
       );
     }
 
-    if (
-      typeof orderData.source_token_amount !== "number" ||
-      orderData.source_token_amount <= 0
-    ) {
-      return Response.json(
-        {
-          success: false,
-          error: "source_token_amount must be a positive number",
-        },
-        {
-          status: 400,
-          headers: corsHeaders,
-        },
-      );
-    }
-
-    // Create order with validation
-    const result = await createOrder(supabase, orderData);
+    const result = await createOrder(supabase, dynamicId, orderData);
 
     if (!result.success) {
       return Response.json(
@@ -314,7 +324,7 @@ async function handleCreateOrder(request: Request, supabase: any) {
     return Response.json(
       {
         success: true,
-        order: result.order,
+        payment_url: result.payment_url,
         message: "Order created successfully",
       },
       {
@@ -386,16 +396,6 @@ serve(async (req) => {
         },
       );
     }
-
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    const url = new URL(req.url);
-    const pathSegments = url.pathname.split("/").filter(Boolean);
-
-    // Route: v1/orders (POST) - Create order (no JWT required)
-    if (req.method === "POST" && pathSegments[0] === "orders") {
-      return await handleCreateOrder(req, supabase);
-    }
-
     // For GET requests, JWT is required
     const authHeader = req.headers.get("Authorization");
     const token = extractBearerToken(authHeader);
@@ -425,6 +425,15 @@ serve(async (req) => {
     }
 
     const dynamicId = dynamicIdRes.dynamicId;
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const url = new URL(req.url);
+    const pathSegments = url.pathname.split("/").filter(Boolean);
+
+    // Route: v1/orders (POST) - Create order (no JWT required)
+    if (req.method === "POST" && pathSegments[0] === "orders") {
+      return await handleCreateOrder(req, supabase, dynamicId);
+    }
 
     // Route: v1/orders/{order_id} (GET) - Get single order
     if (
