@@ -2,7 +2,8 @@
   "version": "5",
   "specifiers": {
     "npm:@types/node@*": "22.15.15",
-    "npm:openai@^4.52.5": "4.104.0"
+    "npm:openai@^4.52.5": "4.104.0",
+    "npm:pusher@*": "5.2.0"
   },
   "npm": {
     "@types/node-fetch@2.6.12": {
@@ -156,6 +157,10 @@
         "ms"
       ]
     },
+    "is-base64@1.1.0": {
+      "integrity": "sha512-Nlhg7Z2dVC4/PTvIFkgVVNvPHSO2eR/Yd0XzhGiXCXEvWnptXlXa/clQ8aePPiMuxEGcWfzWbGw2Fe3d+Y3v1g==",
+      "bin": true
+    },
     "math-intrinsics@1.1.0": {
       "integrity": "sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g=="
     },
@@ -194,8 +199,25 @@
       ],
       "bin": true
     },
+    "pusher@5.2.0": {
+      "integrity": "sha512-F6LNiZyJsIkoHLz+YurjKZ1HH8V1/cMggn4k97kihjP3uTvm0P4mZzSFeHOWIy+PlJ2VInJBhUFJBYLsFR5cjg==",
+      "dependencies": [
+        "@types/node-fetch",
+        "abort-controller",
+        "is-base64",
+        "node-fetch",
+        "tweetnacl",
+        "tweetnacl-util"
+      ]
+    },
     "tr46@0.0.3": {
       "integrity": "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw=="
+    },
+    "tweetnacl-util@0.15.1": {
+      "integrity": "sha512-RKJBIj8lySrShN4w6i/BonWp2Z/uxwC3h4y7xsRrpP59ZboCd0GpEVsOnMDYLMmKBpYhb5TgHzZXy7wTfYFBRw=="
+    },
+    "tweetnacl@1.0.3": {
+      "integrity": "sha512-6rt+RN7aOi1nGMyC4Xa5DdYiukl2UWCbcJft7YhxReBGQD7OAM8Pbxw6YMo4r2diNEA8FEmu32YOn9rhaiE5yw=="
     },
     "undici-types@5.26.5": {
       "integrity": "sha512-JlCMO+ehdEIKqlFxk6IfVoAUVmgz7cU7zD/h9XZ0qzeosSHmUJVOzSQvvYSYWXkFXC+IfLKSIffhv0sVZup6pA=="

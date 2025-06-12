@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { pushNotification } from './pusher.ts';
 
 // Payment status enum matching your database
 enum PaymentStatus {
@@ -63,6 +64,7 @@ interface OrderRecord {
   status: PaymentStatus;
   callback_payload: any;
   display_currency: string;
+  display_amount: number;
   merchant_chain_id: string;
   merchant_address: string;
   required_token: string;
@@ -202,7 +204,7 @@ serve(async (req: Request) => {
     console.log(`Successfully updated order ${existingOrder.order_id} status from ${currentStatus} to ${newStatus}`);
 
     // Handle specific webhook types
-    await handleWebhookType(webhookEvent, existingOrder, supabase);
+    await handleWebhookType(webhookEvent, existingOrder);
 
     return new Response('Webhook processed successfully', { status: 200 });
 
@@ -276,27 +278,70 @@ function validatePaymentDetails(order: OrderRecord, webhook: DaimoWebhookEvent):
 /**
  * Handles specific logic for each webhook type
  */
-async function handleWebhookType(webhook: DaimoWebhookEvent, order: OrderRecord, supabase: any): Promise<void> {
+async function handleWebhookType(
+  webhook: DaimoWebhookEvent,
+  order: OrderRecord,
+): Promise<void> {
   switch (webhook.type) {
     case 'payment_started':
-      console.log(`Payment started for order ${order.order_id}: source tx ${webhook.payment.source?.txHash} on chain ${webhook.payment.source?.chainId}`);
+      console.log(
+        `Payment started for order ${order.order_id}: source tx ${webhook.payment.source?.txHash} on chain ${webhook.payment.source?.chainId}`,
+      );
       // Add any payment started specific logic here
       break;
 
-    case 'payment_completed':
-      console.log(`Payment completed for order ${order.order_id}: destination tx ${webhook.txHash} on chain ${webhook.chainId}`);
-      // Add any payment completion specific logic here (e.g., trigger fulfillment)
+    case 'payment_completed': {
+      console.log(
+        `Payment completed for order ${order.order_id}: destination tx ${webhook.txHash} on chain ${webhook.chainId}`,
+      );
+      const paymentCompletedNotification = await pushNotification(
+        order.merchant_id,
+        webhook.type,
+        {
+          'message': 'Payment completed',
+          'order_id': order.order_id,
+          'display_currency': order.display_currency,
+          'display_amount': order.display_amount,
+        },
+      );
+      if (!paymentCompletedNotification.success) {
+        console.error(
+          'Failed to Send Payment Notification:',
+          paymentCompletedNotification.error,
+        );
+      }
       break;
+    }
 
     case 'payment_bounced':
-      console.log(`Payment bounced for order ${order.order_id}: tx ${webhook.txHash} on chain ${webhook.chainId}`);
+      console.log(
+        `Payment bounced for order ${order.order_id}: tx ${webhook.txHash} on chain ${webhook.chainId}`,
+      );
       // Add any payment bounce specific logic here (e.g., notify customer)
       break;
 
-    case 'payment_refunded':
-      console.log(`Payment refunded for order ${order.order_id}: tx ${webhook.txHash} on chain ${webhook.chainId}`);
-      // Add any refund specific logic here (e.g., reverse fulfillment)
+    case 'payment_refunded': {
+      console.log(
+        `Payment refunded for order ${order.order_id}: tx ${webhook.txHash} on chain ${webhook.chainId}`,
+      );
+      const paymentRefundNotification = await pushNotification(
+        order.merchant_id,
+        webhook.type,
+        {
+          'message': 'Payment Refunded',
+          'order_id': order.order_id,
+          'display_currency': order.display_currency,
+          'display_amount': order.display_amount,
+        },
+      );
+      if (!paymentRefundNotification.success) {
+        console.error(
+          'Failed to Send Payment Notification:',
+          paymentRefundNotification.error,
+        );
+      }
       break;
+    }
 
     default:
       console.warn(`Unhandled webhook type: ${webhook.type}`);
