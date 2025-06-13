@@ -124,6 +124,7 @@ async function createOrder(
     return {
       success: true,
       payment_url: paymentLink.paymentUrl,
+      order_id: order.order_id
     };
   } catch (error) {
     return {
@@ -325,6 +326,7 @@ async function handleCreateOrder(
       {
         success: true,
         payment_url: result.payment_url,
+        order_id: result.order_id,
         message: "Order created successfully",
       },
       {
