@@ -264,10 +264,6 @@ function validatePaymentDetails(order: OrderRecord, webhook: DaimoWebhookEvent):
     }
   }
 
-  // Validate display currency
-  if (webhook.payment.display?.currency !== order.display_currency) {
-    errors.push(`Currency mismatch: expected ${order.display_currency}, got ${webhook.payment.display?.currency}`);
-  }
 
   return {
     isValid: errors.length === 0,
