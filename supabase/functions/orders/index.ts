@@ -11,6 +11,7 @@ const corsHeaders = {
 };
 
 const INTENT_TITLE = "Rozo";
+const MAX_ORDERS_PER_PAGE = 20;
 
 interface OrderData {
   merchant_id: string;
@@ -124,7 +125,6 @@ async function createOrder(
     return {
       success: true,
       payment_url: paymentLink.paymentUrl,
-      order_id: order.order_id
     };
   } catch (error) {
     return {
@@ -201,70 +201,146 @@ async function handleGetSingleOrder(
   }
 }
 
-// GET all orders for merchant with JWT verification
+// GET all orders for merchant with JWT verification and pagination
 async function handleGetAllOrders(
-  _request: Request,
-  supabase: any,
-  dynamicId: string,
+request: Request,
+supabase: any,
+dynamicId: string,
 ) {
-  try {
-    const { data: merchant, error: merchantError } = await supabase
-      .from("merchants")
-      .select(`merchant_id`)
-      .eq("dynamic_id", dynamicId)
-      .single();
+try {
+const { data: merchant, error: merchantError } = await supabase
+  .from("merchants")
+  .select(`merchant_id`)
+  .eq("dynamic_id", dynamicId)
+  .single();
 
-    if (merchantError || !merchant) {
-      return Response.json(
-        { success: false, error: merchantError.message },
-        {
-          status: 404,
-          headers: corsHeaders,
-        },
-      );
-    }
+if (merchantError || !merchant) {
+  return Response.json(
+    { success: false, error: merchantError.message },
+    {
+      status: 404,
+      headers: corsHeaders,
+    },
+  );
+}
 
-    const { data: orders, error } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("merchant_id", merchant.merchant_id)
-      .order("created_at", { ascending: false });
+// Extract parameters from URL
+const url = new URL(request.url);
+const limitParam = url.searchParams.get("limit");
+const offsetParam = url.searchParams.get("offset");
+const statusParam = url.searchParams.get("status");
 
-    if (error) {
-      return Response.json(
-        { success: false, error: error.message },
-        {
-          status: 400,
-          headers: corsHeaders,
-        },
-      );
-    }
-
+// Parse and validate limit (default: 10, max: 20)
+let limit = 10; // default limit
+if (limitParam) {
+  const parsedLimit = parseInt(limitParam, 10);
+  if (isNaN(parsedLimit) || parsedLimit < 1) {
     return Response.json(
+      { success: false, error: "Limit must be a positive integer" },
       {
-        success: true,
-        orders: orders || [],
-        count: orders?.length || 0,
-      },
-      {
-        status: 200,
-        headers: corsHeaders,
-      },
-    );
-  } catch (error) {
-    return Response.json(
-      {
-        success: false,
-        error: `Server error: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      },
-      {
-        status: 500,
+        status: 400,
         headers: corsHeaders,
       },
     );
   }
+  limit = Math.min(parsedLimit, 20); // enforce maximum of 20
+}
+
+// Parse and validate offset (default: 0)
+let offset = 0; // default offset
+if (offsetParam) {
+  const parsedOffset = parseInt(offsetParam, 10);
+  if (isNaN(parsedOffset) || parsedOffset < 0) {
+    return Response.json(
+      { success: false, error: "Offset must be a non-negative integer" },
+      {
+        status: 400,
+        headers: corsHeaders,
+      },
+    );
+  }
+  offset = parsedOffset;
+}
+
+// Validate status parameter
+const validStatuses = ["pending", "completed", "failed", "discrepancy"];
+if (statusParam && !validStatuses.includes(statusParam.toLowerCase())) {
+  return Response.json(
+    { success: false, error: "Status must be one of: pending, completed, failed, discrepancy" },
+    {
+      status: 400,
+      headers: corsHeaders,
+    },
+  );
+}
+
+// Helper function to apply status filter
+const applyStatusFilter = (query: any) => {
+  if (!statusParam) return query;
+  
+  const status = statusParam.toLowerCase();
+  return status === "pending" 
+    ? query.in("status", ["PENDING", "PROCESSING"])
+    : query.eq("status", statusParam.toUpperCase());
+};
+
+// Get total count and paginated orders in parallel
+const [countResult, ordersResult] = await Promise.all([
+  applyStatusFilter(
+    supabase
+      .from("orders")
+      .select("*", { count: "exact", head: true })
+      .eq("merchant_id", merchant.merchant_id)
+  ),
+  applyStatusFilter(
+    supabase
+      .from("orders")
+      .select("*")
+      .eq("merchant_id", merchant.merchant_id)
+  ).order("created_at", { ascending: false })
+   .range(offset, offset + limit - 1)
+]);
+
+const { count: totalCount, error: countError } = countResult;
+const { data: orders, error } = ordersResult;
+
+if (error) {
+  return Response.json(
+    { success: false, error: error.message },
+    {
+      status: 400,
+      headers: corsHeaders,
+    },
+  );
+}
+
+return Response.json(
+  {
+    success: true,
+    orders: orders || [],
+    total: totalCount || 0,
+    offset: offset,
+    limit: limit,
+  },
+  {
+    status: 200,
+    headers: corsHeaders,
+  },
+);
+} catch (error) {
+return Response.json(
+  {
+    success: false,
+    error: `Server error: ${
+      error instanceof Error ? error.message : "Unknown error"
+    }`,
+  },
+  {
+    status: 500,
+    headers: corsHeaders,
+  },
+);
+}
 }
 
 async function handleCreateOrder(
@@ -326,7 +402,6 @@ async function handleCreateOrder(
       {
         success: true,
         payment_url: result.payment_url,
-        order_id: result.order_id,
         message: "Order created successfully",
       },
       {
