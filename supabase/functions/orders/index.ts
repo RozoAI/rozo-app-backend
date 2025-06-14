@@ -81,7 +81,7 @@ async function createOrder(
         error: "Cannot create order with amount less than 0.01",
       };
     }
-    const paymentLink = await createDaimoPaymentLink(
+    const paymentResponse = await createDaimoPaymentLink(
       INTENT_TITLE,
       merchant.wallet_address,
       Number(merchant.tokens.chain_id),
@@ -89,17 +89,17 @@ async function createOrder(
       required_amount_usd.toString(),
     );
 
-    if (!paymentLink.success) {
+    if (!paymentResponse.success) {
       return {
         success: false,
-        error: paymentLink.error,
+        error: paymentResponse.error,
       };
     }
     // Create the order with required_token from merchant's default token
     const orderToInsert: Order = {
       ...orderData,
       merchant_id: merchant.merchant_id,
-      payment_id: paymentLink.paymentId,
+      payment_id: paymentResponse.paymentDetail.id,
       merchant_chain_id: merchant.tokens.chain_id,
       merchant_address: merchant.wallet_address,
       required_amount_usd: required_amount_usd,
@@ -124,7 +124,8 @@ async function createOrder(
 
     return {
       success: true,
-      payment_url: paymentLink.paymentUrl,
+      paymentDetail: paymentResponse.paymentDetail,
+      order_id: order.order_id,
     };
   } catch (error) {
     return {
@@ -401,7 +402,9 @@ async function handleCreateOrder(
     return Response.json(
       {
         success: true,
-        payment_url: result.payment_url,
+        qrcode: result.paymentDetail.url,
+        paymentDetail: result.paymentDetail,
+        order_id: result.order_id,
         message: "Order created successfully",
       },
       {

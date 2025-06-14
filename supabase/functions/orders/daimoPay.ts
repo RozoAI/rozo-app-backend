@@ -1,7 +1,6 @@
 interface DaimoPaymentResponse {
   success: boolean;
-  paymentId: string;
-  paymentUrl?: string;
+  paymentDetail: any;
   error?: string;
 }
 
@@ -26,7 +25,7 @@ export async function createDaimoPaymentLink(
     if (!apiKey) {
       return {
         success: false,
-        paymentId: "",
+        paymentDetail: {},
         error: "DAIMO_API_KEY environment variable is not set",
       };
     }
@@ -38,7 +37,7 @@ export async function createDaimoPaymentLink(
     ) {
       return {
         success: false,
-        paymentId: "",
+        paymentDetail: {},
         error: "Missing required parameters for Creating paymentLink",
       };
     }
@@ -47,7 +46,7 @@ export async function createDaimoPaymentLink(
     if (isNaN(parseFloat(amountUnits)) || parseFloat(amountUnits) <= 0) {
       return {
         success: false,
-        paymentId: "",
+        paymentDetail : {},
         error: "amountUnits must be a valid positive number",
       };
     }
@@ -80,22 +79,21 @@ export async function createDaimoPaymentLink(
       const errorText = await response.text();
       return {
         success: false,
-        paymentId: "",
+        paymentDetail : {},
         error: `Daimo API Error ${response.status}: ${errorText}`,
       };
     }
 
-    const paymentLink = await response.json();
+    const paymentDetail = await response.json();
 
     return {
       success: true,
-      paymentId: paymentLink.id,
-      paymentUrl: paymentLink.url,
+      paymentDetail: paymentDetail
     };
   } catch (error) {
     return {
       success: false,
-      paymentId: "",
+      paymentDetail: {},
       error: error instanceof Error ? error.message : "Unknown error occurred",
     };
   }
