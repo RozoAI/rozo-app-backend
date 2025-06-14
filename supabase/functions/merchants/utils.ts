@@ -35,7 +35,7 @@ export async function verifyDynamicJWT(
     const publicKey = signingKey.getPublicKey();
 
     const decodedToken = jwt.verify(token, publicKey, {
-      ignoreExpiration: true,
+      ignoreExpiration: false,
     }) as JwtPayload;
 
     // Check for additional auth requirements
