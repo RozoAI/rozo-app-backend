@@ -23,6 +23,15 @@ Backend services built with Supabase Edge Functions and PostgreSQL.
 │   └── seed.sql          # Sample data
 ```
 
+## API Endpoints
+
+| Function | Description |
+|----------|-------------|
+| `/merchants` | Merchant registration & management |
+| `/orders` | Order creation & tracking |
+| `/payment-callback` | Payment status webhooks |
+
+
 ## Setup
 
 1. **Install Supabase CLI**
@@ -38,38 +47,17 @@ Backend services built with Supabase Edge Functions and PostgreSQL.
 
 3. **Start locally**
    ```bash
-   supabase start
+   npx supabase start
    npx supabase functions serve --env-file .env.local
    ```
 
 4. **Deploy**
    ```bash
-   supabase functions deploy
+   npx supabase link --project-ref <project-ref>
+   npx supabase db push --include-seed
+   npx supabase functions deploy
    ```
 
-## API Endpoints
-
-| Function | Description |
-|----------|-------------|
-| `/merchants` | Merchant registration & management |
-| `/orders` | Order creation & tracking |
-| `/payment-callback` | Payment status webhooks |
-
-## Development
-
-```bash
-# Local development
-supabase start
-npx supabase functions serve --env-file .env.local
-
-# Database
-supabase db reset        # Run migrations + seed
-supabase migration new   # Create migration
-
-# Deploy
-supabase functions deploy
-supabase db push
-```
 
 ## Environment Variables
 
