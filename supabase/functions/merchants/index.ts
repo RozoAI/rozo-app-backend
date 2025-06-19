@@ -105,9 +105,10 @@ async function handleGet(_request: Request, supabase: any, dynamicId: string) {
 }
 
 // POST handler with upsert
-async function handlePost(request: Request, supabase: any, payload: any) {
+async function handlePost(request: Request, supabase: any, payload: any, wallet_address: string) {
   try {
     const requestData: Merchant = await request.json();
+    requestData.wallet_address = wallet_address;
     requestData.dynamic_id = payload.sub;
     requestData.email = payload.email;
     requestData.default_token_id = DEFAULT_TOKEN_ID;
@@ -194,7 +195,15 @@ serve(async (req) => {
       });
     }
     const { sub: dynamicId } = tokenVerification.payload;
-
+    const wallet_address= tokenVerification.embedded_wallet_address;
+    if (!wallet_address) {
+      return Response.json({
+        error: "Missing embedded wallet address",
+      }, {
+        status: 422,
+        headers: corsHeaders,
+      });
+    }
     const supabase = createClient(
       SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY,
@@ -204,7 +213,7 @@ serve(async (req) => {
       case "GET":
         return await handleGet(req, supabase, dynamicId);
       case "POST":
-        return await handlePost(req, supabase, tokenVerification.payload);
+        return await handlePost(req, supabase, tokenVerification.payload, wallet_address);
       default:
         return Response.json({ error: `Method ${req.method} not allowed` }, {
           status: 405,

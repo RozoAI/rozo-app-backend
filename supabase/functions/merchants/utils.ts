@@ -5,8 +5,31 @@ interface AuthResult {
   success: boolean;
   payload?: JwtPayload;
   error?: string;
+  embedded_wallet_address?: string | null;
 }
 
+interface VerifiedCredential {
+  address?: string;
+  wallet_provider: string;
+  chain?: string;
+  id: string;
+  public_identifier: string;
+  wallet_name?: string;
+  format: string;
+  signInEnabled: boolean;
+}
+
+interface DecodedJWT {
+  verified_credentials?: VerifiedCredential[];
+}
+
+function getEmbeddedWalletAddress(decodedJWT: DecodedJWT): string | null {
+  const embeddedWallet = decodedJWT.verified_credentials?.find(
+    (credential: VerifiedCredential) => credential.wallet_provider === "embeddedWallet"
+  );
+  
+  return embeddedWallet?.address || null;
+}
 /**
  * Verify Dynamic JWT token
  * @param token - The JWT token to verify
@@ -52,6 +75,7 @@ export async function verifyDynamicJWT(
     return {
       success: true,
       payload: decodedToken,
+      embedded_wallet_address: getEmbeddedWalletAddress(decodedToken),
     };
   } catch (error) {
     return {
