@@ -11,7 +11,6 @@ const corsHeaders = {
 };
 
 const INTENT_TITLE = "Rozo";
-const MAX_ORDERS_PER_PAGE = 20;
 
 interface OrderData {
   merchant_id: string;
@@ -204,13 +203,13 @@ async function handleGetSingleOrder(
   }
 }
 
-// GET all orders for merchant with JWT verification and pagination
 async function handleGetAllOrders(
   request: Request,
   supabase: any,
   dynamicId: string
 ) {
   try {
+    // Get merchant_id from dynamic_id
     const { data: merchant, error: merchantError } = await supabase
       .from("merchants")
       .select(`merchant_id`)
@@ -227,45 +226,11 @@ async function handleGetAllOrders(
       );
     }
 
-    // Extract parameters from URL
+    // Extract status parameter from URL
     const url = new URL(request.url);
-    const limitParam = url.searchParams.get("limit");
-    const offsetParam = url.searchParams.get("offset");
     const statusParam = url.searchParams.get("status");
 
-    // Parse and validate limit (default: 10, max: 20)
-    let limit = 10; // default limit
-    if (limitParam) {
-      const parsedLimit = parseInt(limitParam, 10);
-      if (isNaN(parsedLimit) || parsedLimit < 1) {
-        return Response.json(
-          { success: false, error: "Limit must be a positive integer" },
-          {
-            status: 400,
-            headers: corsHeaders,
-          }
-        );
-      }
-      limit = Math.min(parsedLimit, 20); // enforce maximum of 20
-    }
-
-    // Parse and validate offset (default: 0)
-    let offset = 0; // default offset
-    if (offsetParam) {
-      const parsedOffset = parseInt(offsetParam, 10);
-      if (isNaN(parsedOffset) || parsedOffset < 0) {
-        return Response.json(
-          { success: false, error: "Offset must be a non-negative integer" },
-          {
-            status: 400,
-            headers: corsHeaders,
-          }
-        );
-      }
-      offset = parsedOffset;
-    }
-
-    // Validate status parameter
+    // Validate status parameter if provided
     const validStatuses = ["pending", "completed", "failed", "discrepancy"];
     if (statusParam && !validStatuses.includes(statusParam.toLowerCase())) {
       return Response.json(
@@ -281,36 +246,25 @@ async function handleGetAllOrders(
       );
     }
 
-    // Helper function to apply status filter
-    const applyStatusFilter = (query: any) => {
-      if (!statusParam) return query;
+    // Build the base query with minimal fields
+    let query = supabase
+      .from("orders")
+      .select("order_id, status, display_amount, display_currency, created_at")
+      .eq("merchant_id", merchant.merchant_id)
+      .order("created_at", { ascending: false });
 
+    // Apply status filter if provided
+    if (statusParam) {
       const status = statusParam.toLowerCase();
-      return status === "pending"
-        ? query.in("status", ["PENDING", "PROCESSING"])
-        : query.eq("status", statusParam.toUpperCase());
-    };
+      if (status === "pending") {
+        query = query.in("status", ["PENDING", "PROCESSING"]);
+      } else {
+        query = query.eq("status", statusParam.toUpperCase());
+      }
+    }
 
-    // Get total count and paginated orders in parallel
-    const [countResult, ordersResult] = await Promise.all([
-      applyStatusFilter(
-        supabase
-          .from("orders")
-          .select("*", { count: "exact", head: true })
-          .eq("merchant_id", merchant.merchant_id)
-      ),
-      applyStatusFilter(
-        supabase
-          .from("orders")
-          .select("*")
-          .eq("merchant_id", merchant.merchant_id)
-      )
-        .order("created_at", { ascending: false })
-        .range(offset, offset + limit - 1),
-    ]);
-
-    const { count: totalCount, error: countError } = countResult;
-    const { data: orders, error } = ordersResult;
+    // Execute query
+    const { data: orders, error } = await query;
 
     if (error) {
       return Response.json(
@@ -326,13 +280,13 @@ async function handleGetAllOrders(
       {
         success: true,
         orders: orders || [],
-        total: totalCount || 0,
-        offset: offset,
-        limit: limit,
       },
       {
         status: 200,
-        headers: corsHeaders,
+        headers: {
+          ...corsHeaders,
+          "Cache-Control": "public, max-age=60", // Cache for 60 seconds
+        },
       }
     );
   } catch (error) {
