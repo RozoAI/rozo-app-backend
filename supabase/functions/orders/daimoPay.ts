@@ -18,6 +18,7 @@ export async function createDaimoPaymentLink(
   destinationChainId: number,
   tokenAddress: string,
   amountUnits: string,
+  description?: string
 ): Promise<DaimoPaymentResponse> {
   try {
     // Get API key from environment variables
@@ -32,7 +33,10 @@ export async function createDaimoPaymentLink(
 
     // Validate required parameters
     if (
-      !intent || !destinationAddress || !destinationChainId || !tokenAddress ||
+      !intent ||
+      !destinationAddress ||
+      !destinationChainId ||
+      !tokenAddress ||
       !amountUnits
     ) {
       return {
@@ -46,7 +50,7 @@ export async function createDaimoPaymentLink(
     if (isNaN(parseFloat(amountUnits)) || parseFloat(amountUnits) <= 0) {
       return {
         success: false,
-        paymentDetail : {},
+        paymentDetail: {},
         error: "amountUnits must be a valid positive number",
       };
     }
@@ -54,16 +58,28 @@ export async function createDaimoPaymentLink(
     // Construct payment request
     const paymentRequest = {
       display: {
-        intent: intent,
+        intent,
       },
       destination: {
-        destinationAddress: destinationAddress,
+        destinationAddress,
+        tokenAddress,
+        amountUnits,
         chainId: destinationChainId,
-        tokenAddress: tokenAddress,
-        amountUnits: amountUnits,
         calldata: "0x",
       },
     };
+
+    if (description) {
+      paymentRequest.display = {
+        ...paymentRequest.display,
+        items: [
+          {
+            name: "Note",
+            description,
+          },
+        ],
+      };
+    }
 
     // Make API request to Daimo Pay
     const response = await fetch("https://pay.daimo.com/api/payment", {
@@ -79,7 +95,7 @@ export async function createDaimoPaymentLink(
       const errorText = await response.text();
       return {
         success: false,
-        paymentDetail : {},
+        paymentDetail: {},
         error: `Daimo API Error ${response.status}: ${errorText}`,
       };
     }
@@ -88,7 +104,7 @@ export async function createDaimoPaymentLink(
 
     return {
       success: true,
-      paymentDetail: paymentDetail
+      paymentDetail: paymentDetail,
     };
   } catch (error) {
     return {
