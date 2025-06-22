@@ -1,36 +1,56 @@
 # Rozo Backend API
 
-Backend services built with Supabase Edge Functions and PostgreSQL.
+This project implements the backend services for Rozo, leveraging the power and scalability of Supabase Edge Functions, written in TypeScript and running on Deno. This serverless architecture allows for efficient, globally distributed functions that execute close to your users and your Supabase PostgreSQL database, ensuring low latency and high performance.
 
 ## Tech Stack
 
 - **Database**: PostgreSQL (Supabase)
-- **Runtime**: Deno (Edge Functions)
-- **Auth**: [Dynamic](https://www.dynamic.xyz/) (Wallet Infrastructure)
-- **Payments**: [Daimo Pay](https://pay.daimo.com/)
-- **Real-time**: [Pusher](https://pusher.com/)
+- **Compute**: Supabase Edge Functions (Deno Runtime, TypeScript)
+- **Authentication**: [Dynamic](https://www.dynamic.xyz/) (Wallet-based JWT authentication)
+- **Payments**: [Daimo Pay](https://pay.daimo.com/) (Payment processing and webhooks)
+- **Real-time Notifications**: [Pusher](https://pusher.com/) (For instant updates on payment status)
 
 ## Project Structure
 
 ```
-├── example.env            # Environment template
+├── example.env            # Environment variable template
 ├── supabase/
-│   ├── functions/         # Edge Functions
-│   │   ├── merchants/     # Merchant management
-│   │   ├── orders/        # Order processing
-│   │   └── payment-callback/  # Payment webhooks
-│   ├── migrations/        # Database schema
-│   └── seed.sql          # Sample data
+│   ├── functions/         # Core application logic as Edge Functions
+│   │   ├── merchants/     # Handles merchant profiles and settings
+│   │   │   ├── index.ts   # Main entry point for merchant operations
+│   │   │   └── utils.ts   # Utility functions (e.g., JWT verification)
+│   │   ├── orders/        # Manages order creation, retrieval, and status
+│   │   │   ├── index.ts   # Main entry point for order operations
+│   │   │   ├── daimoPay.ts# Integration with Daimo payment gateway
+│   │   │   └── utils.ts   # Shared utilities
+│   │   └── payment-callback/  # Processes incoming payment webhooks
+│   │       ├── index.ts   # Main entry point for webhook handling
+│   │       └── pusher.ts  # Integration with Pusher for notifications
+│   ├── migrations/        # Database schema migrations
+│   └── seed.sql           # Initial data for development
 ```
 
-## API Endpoints
+## Supabase Edge Functions
 
-| Function | Description |
-|----------|-------------|
-| `/merchants` | Merchant registration & management |
-| `/orders` | Order creation & tracking |
-| `/payment-callback` | Payment status webhooks |
+Core backend logic is handled by these Supabase Edge Functions:
 
+### 1. `/merchants`
+
+- **Manages**: Merchant profiles (create, read, update).
+- **Auth**: JWT (via Dynamic).
+
+### 2. `/orders`
+
+- **Manages**: Order lifecycle (creation, retrieval, status tracking).
+- **Auth**: JWT (via Dynamic).
+- **Integrates with**: Daimo Pay for payment processing.
+
+### 3. `/payment-callback`
+
+- **Handles**: Incoming webhooks from Daimo Pay.
+- **Actions**: Updates order status, validates payment data.
+- **Auth**: Webhook secret.
+- **Integrates with**: Pusher for real-time notifications.
 
 ## Setup
 
