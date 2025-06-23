@@ -93,12 +93,13 @@ async function createOrder(
       };
     }
 
+    const formattedUsdAmount = parseFloat(required_amount_usd.toFixed(2));
     const orderNumber = generateOrderNumber();
 
     const paymentResponse = await createDaimoPaymentLink(
       INTENT_TITLE,
       merchant,
-      required_amount_usd.toString(),
+      formattedUsdAmount.toString(),
       orderNumber,
       orderData.description
     );
@@ -117,7 +118,7 @@ async function createOrder(
       payment_id: paymentResponse.paymentDetail.id,
       merchant_chain_id: merchant.tokens.chain_id,
       merchant_address: merchant.wallet_address,
-      required_amount_usd: required_amount_usd,
+      required_amount_usd: formattedUsdAmount,
       required_token: merchant.tokens.token_address,
       status: "PENDING",
       created_at: new Date().toISOString(),

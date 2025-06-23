@@ -72,7 +72,7 @@ export async function createDaimoPaymentLink(
       destination: {
         destinationAddress,
         tokenAddress,
-        amountUnits,
+        amountUnits: String(parseFloat(amountUnits).toFixed(2)),
         chainId: destinationChainId,
         calldata: "0x",
       },
