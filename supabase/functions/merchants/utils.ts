@@ -23,11 +23,13 @@ interface DecodedJWT {
   verified_credentials?: VerifiedCredential[];
 }
 
+// Get embedded wallet address from JWT and get the ZeroDev address
 function getEmbeddedWalletAddress(decodedJWT: DecodedJWT): string | null {
   const embeddedWallet = decodedJWT.verified_credentials?.find(
-    (credential: VerifiedCredential) => credential.wallet_provider === "embeddedWallet"
+    (credential: VerifiedCredential) =>
+      credential.wallet_provider === "smartContractWallet"
   );
-  
+
   return embeddedWallet?.address || null;
 }
 /**
@@ -40,11 +42,10 @@ function getEmbeddedWalletAddress(decodedJWT: DecodedJWT): string | null {
 export async function verifyDynamicJWT(
   token: string,
   dynamicEnvId: string,
-  allowAdditionalAuth: boolean = false,
+  allowAdditionalAuth: boolean = false
 ): Promise<AuthResult> {
   try {
-    const jwksUrl =
-      `https://app.dynamic.xyz/api/v0/sdk/${dynamicEnvId}/.well-known/jwks`;
+    const jwksUrl = `https://app.dynamic.xyz/api/v0/sdk/${dynamicEnvId}/.well-known/jwks`;
     const client = new JwksClient({
       jwksUri: jwksUrl,
       rateLimit: true,
@@ -80,9 +81,8 @@ export async function verifyDynamicJWT(
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error
-        ? error.message
-        : "Token verification failed",
+      error:
+        error instanceof Error ? error.message : "Token verification failed",
     };
   }
 }
