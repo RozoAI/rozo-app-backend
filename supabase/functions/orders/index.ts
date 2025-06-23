@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { extractBearerToken, verifyDynamicJWT } from "./utils.ts";
 import { createDaimoPaymentLink } from "./daimoPay.ts";
+import { extractBearerToken, verifyDynamicJWT } from "./utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -87,7 +87,8 @@ async function createOrder(
       merchant.wallet_address,
       Number(merchant.tokens.chain_id),
       merchant.tokens.token_address,
-      required_amount_usd.toString()
+      required_amount_usd.toString(),
+      orderData.description
     );
 
     if (!paymentResponse.success) {
@@ -209,7 +210,6 @@ async function handleGetAllOrders(
   dynamicId: string
 ) {
   try {
-    // Get merchant_id from dynamic_id
     const { data: merchant, error: merchantError } = await supabase
       .from("merchants")
       .select(`merchant_id`)
@@ -226,11 +226,45 @@ async function handleGetAllOrders(
       );
     }
 
-    // Extract status parameter from URL
+    // Extract parameters from URL
     const url = new URL(request.url);
+    const limitParam = url.searchParams.get("limit");
+    const offsetParam = url.searchParams.get("offset");
     const statusParam = url.searchParams.get("status");
 
-    // Validate status parameter if provided
+    // Parse and validate limit (default: 10, max: 20)
+    let limit = 10; // default limit
+    if (limitParam) {
+      const parsedLimit = parseInt(limitParam, 10);
+      if (isNaN(parsedLimit) || parsedLimit < 1) {
+        return Response.json(
+          { success: false, error: "Limit must be a positive integer" },
+          {
+            status: 400,
+            headers: corsHeaders,
+          }
+        );
+      }
+      limit = Math.min(parsedLimit, 20); // enforce maximum of 20
+    }
+
+    // Parse and validate offset (default: 0)
+    let offset = 0; // default offset
+    if (offsetParam) {
+      const parsedOffset = parseInt(offsetParam, 10);
+      if (isNaN(parsedOffset) || parsedOffset < 0) {
+        return Response.json(
+          { success: false, error: "Offset must be a non-negative integer" },
+          {
+            status: 400,
+            headers: corsHeaders,
+          }
+        );
+      }
+      offset = parsedOffset;
+    }
+
+    // Validate status parameter
     const validStatuses = ["pending", "completed", "failed", "discrepancy"];
     if (statusParam && !validStatuses.includes(statusParam.toLowerCase())) {
       return Response.json(
@@ -246,25 +280,36 @@ async function handleGetAllOrders(
       );
     }
 
-    // Build the base query with minimal fields
-    let query = supabase
-      .from("orders")
-      .select("order_id, status, display_amount, display_currency, created_at")
-      .eq("merchant_id", merchant.merchant_id)
-      .order("created_at", { ascending: false });
+    // Helper function to apply status filter
+    const applyStatusFilter = (query: any) => {
+      if (!statusParam) return query;
 
-    // Apply status filter if provided
-    if (statusParam) {
       const status = statusParam.toLowerCase();
-      if (status === "pending") {
-        query = query.in("status", ["PENDING", "PROCESSING"]);
-      } else {
-        query = query.eq("status", statusParam.toUpperCase());
-      }
-    }
+      return status === "pending"
+        ? query.in("status", ["PENDING", "PROCESSING"])
+        : query.eq("status", statusParam.toUpperCase());
+    };
 
-    // Execute query
-    const { data: orders, error } = await query;
+    // Get total count and paginated orders in parallel
+    const [countResult, ordersResult] = await Promise.all([
+      applyStatusFilter(
+        supabase
+          .from("orders")
+          .select("*", { count: "exact", head: true })
+          .eq("merchant_id", merchant.merchant_id)
+      ),
+      applyStatusFilter(
+        supabase
+          .from("orders")
+          .select("*")
+          .eq("merchant_id", merchant.merchant_id)
+      )
+        .order("created_at", { ascending: false })
+        .range(offset, offset + limit - 1),
+    ]);
+
+    const { count: totalCount, error: countError } = countResult;
+    const { data: orders, error } = ordersResult;
 
     if (error) {
       return Response.json(
@@ -280,13 +325,13 @@ async function handleGetAllOrders(
       {
         success: true,
         orders: orders || [],
+        total: totalCount || 0,
+        offset: offset,
+        limit: limit,
       },
       {
         status: 200,
-        headers: {
-          ...corsHeaders,
-          "Cache-Control": "public, max-age=60", // Cache for 60 seconds
-        },
+        headers: corsHeaders,
       }
     );
   } catch (error) {
