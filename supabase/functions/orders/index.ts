@@ -11,7 +11,6 @@ const corsHeaders = {
 };
 
 const INTENT_TITLE = "Rozo";
-const MAX_ORDERS_PER_PAGE = 20;
 
 interface OrderData {
   merchant_id: string;
@@ -40,18 +39,20 @@ interface CreateOrderRequest {
 async function createOrder(
   supabase: any,
   dynamicId: string,
-  orderData: CreateOrderRequest,
+  orderData: CreateOrderRequest
 ) {
   try {
     // First, verify if merchant exists and get token info
     const { data: merchant, error: merchantError } = await supabase
       .from("merchants")
-      .select(`
+      .select(
+        `
         merchant_id,
         dynamic_id,
         wallet_address,
         tokens!inner(chain_id, token_address)
-      `)
+      `
+      )
       .eq("dynamic_id", dynamicId)
       .single();
 
@@ -86,7 +87,7 @@ async function createOrder(
       merchant.wallet_address,
       Number(merchant.tokens.chain_id),
       merchant.tokens.token_address,
-      required_amount_usd.toString(),
+      required_amount_usd.toString()
     );
 
     if (!paymentResponse.success) {
@@ -140,7 +141,7 @@ async function handleGetSingleOrder(
   _request: Request,
   supabase: any,
   orderId: string,
-  dynamicId: string,
+  dynamicId: string
 ) {
   try {
     const { data: merchant, error: merchantError } = await supabase
@@ -155,7 +156,7 @@ async function handleGetSingleOrder(
         {
           status: 404,
           headers: corsHeaders,
-        },
+        }
       );
     }
 
@@ -172,7 +173,7 @@ async function handleGetSingleOrder(
         {
           status: 404,
           headers: corsHeaders,
-        },
+        }
       );
     }
 
@@ -184,7 +185,7 @@ async function handleGetSingleOrder(
       {
         status: 200,
         headers: corsHeaders,
-      },
+      }
     );
   } catch (error) {
     return Response.json(
@@ -197,166 +198,123 @@ async function handleGetSingleOrder(
       {
         status: 500,
         headers: corsHeaders,
-      },
+      }
     );
   }
 }
 
-// GET all orders for merchant with JWT verification and pagination
 async function handleGetAllOrders(
-request: Request,
-supabase: any,
-dynamicId: string,
+  request: Request,
+  supabase: any,
+  dynamicId: string
 ) {
-try {
-const { data: merchant, error: merchantError } = await supabase
-  .from("merchants")
-  .select(`merchant_id`)
-  .eq("dynamic_id", dynamicId)
-  .single();
+  try {
+    // Get merchant_id from dynamic_id
+    const { data: merchant, error: merchantError } = await supabase
+      .from("merchants")
+      .select(`merchant_id`)
+      .eq("dynamic_id", dynamicId)
+      .single();
 
-if (merchantError || !merchant) {
-  return Response.json(
-    { success: false, error: merchantError.message },
-    {
-      status: 404,
-      headers: corsHeaders,
-    },
-  );
-}
+    if (merchantError || !merchant) {
+      return Response.json(
+        { success: false, error: merchantError.message },
+        {
+          status: 404,
+          headers: corsHeaders,
+        }
+      );
+    }
 
-// Extract parameters from URL
-const url = new URL(request.url);
-const limitParam = url.searchParams.get("limit");
-const offsetParam = url.searchParams.get("offset");
-const statusParam = url.searchParams.get("status");
+    // Extract status parameter from URL
+    const url = new URL(request.url);
+    const statusParam = url.searchParams.get("status");
 
-// Parse and validate limit (default: 10, max: 20)
-let limit = 10; // default limit
-if (limitParam) {
-  const parsedLimit = parseInt(limitParam, 10);
-  if (isNaN(parsedLimit) || parsedLimit < 1) {
+    // Validate status parameter if provided
+    const validStatuses = ["pending", "completed", "failed", "discrepancy"];
+    if (statusParam && !validStatuses.includes(statusParam.toLowerCase())) {
+      return Response.json(
+        {
+          success: false,
+          error:
+            "Status must be one of: pending, completed, failed, discrepancy",
+        },
+        {
+          status: 400,
+          headers: corsHeaders,
+        }
+      );
+    }
+
+    // Build the base query with minimal fields
+    let query = supabase
+      .from("orders")
+      .select("order_id, status, display_amount, display_currency, created_at")
+      .eq("merchant_id", merchant.merchant_id)
+      .order("created_at", { ascending: false });
+
+    // Apply status filter if provided
+    if (statusParam) {
+      const status = statusParam.toLowerCase();
+      if (status === "pending") {
+        query = query.in("status", ["PENDING", "PROCESSING"]);
+      } else {
+        query = query.eq("status", statusParam.toUpperCase());
+      }
+    }
+
+    // Execute query
+    const { data: orders, error } = await query;
+
+    if (error) {
+      return Response.json(
+        { success: false, error: error.message },
+        {
+          status: 400,
+          headers: corsHeaders,
+        }
+      );
+    }
+
     return Response.json(
-      { success: false, error: "Limit must be a positive integer" },
       {
-        status: 400,
-        headers: corsHeaders,
+        success: true,
+        orders: orders || [],
       },
+      {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Cache-Control": "public, max-age=60", // Cache for 60 seconds
+        },
+      }
+    );
+  } catch (error) {
+    return Response.json(
+      {
+        success: false,
+        error: `Server error: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+      },
+      {
+        status: 500,
+        headers: corsHeaders,
+      }
     );
   }
-  limit = Math.min(parsedLimit, 20); // enforce maximum of 20
-}
-
-// Parse and validate offset (default: 0)
-let offset = 0; // default offset
-if (offsetParam) {
-  const parsedOffset = parseInt(offsetParam, 10);
-  if (isNaN(parsedOffset) || parsedOffset < 0) {
-    return Response.json(
-      { success: false, error: "Offset must be a non-negative integer" },
-      {
-        status: 400,
-        headers: corsHeaders,
-      },
-    );
-  }
-  offset = parsedOffset;
-}
-
-// Validate status parameter
-const validStatuses = ["pending", "completed", "failed", "discrepancy"];
-if (statusParam && !validStatuses.includes(statusParam.toLowerCase())) {
-  return Response.json(
-    { success: false, error: "Status must be one of: pending, completed, failed, discrepancy" },
-    {
-      status: 400,
-      headers: corsHeaders,
-    },
-  );
-}
-
-// Helper function to apply status filter
-const applyStatusFilter = (query: any) => {
-  if (!statusParam) return query;
-  
-  const status = statusParam.toLowerCase();
-  return status === "pending" 
-    ? query.in("status", ["PENDING", "PROCESSING"])
-    : query.eq("status", statusParam.toUpperCase());
-};
-
-// Get total count and paginated orders in parallel
-const [countResult, ordersResult] = await Promise.all([
-  applyStatusFilter(
-    supabase
-      .from("orders")
-      .select("*", { count: "exact", head: true })
-      .eq("merchant_id", merchant.merchant_id)
-  ),
-  applyStatusFilter(
-    supabase
-      .from("orders")
-      .select("*")
-      .eq("merchant_id", merchant.merchant_id)
-  ).order("created_at", { ascending: false })
-   .range(offset, offset + limit - 1)
-]);
-
-const { count: totalCount, error: countError } = countResult;
-const { data: orders, error } = ordersResult;
-
-if (error) {
-  return Response.json(
-    { success: false, error: error.message },
-    {
-      status: 400,
-      headers: corsHeaders,
-    },
-  );
-}
-
-return Response.json(
-  {
-    success: true,
-    orders: orders || [],
-    total: totalCount || 0,
-    offset: offset,
-    limit: limit,
-  },
-  {
-    status: 200,
-    headers: corsHeaders,
-  },
-);
-} catch (error) {
-return Response.json(
-  {
-    success: false,
-    error: `Server error: ${
-      error instanceof Error ? error.message : "Unknown error"
-    }`,
-  },
-  {
-    status: 500,
-    headers: corsHeaders,
-  },
-);
-}
 }
 
 async function handleCreateOrder(
   request: Request,
   supabase: any,
-  dynamicId: string,
+  dynamicId: string
 ) {
   try {
     const orderData: CreateOrderRequest = await request.json();
 
     // Validate required fields
-    const requiredFields = [
-      "display_currency",
-      "display_amount",
-    ];
+    const requiredFields = ["display_currency", "display_amount"];
 
     for (const field of requiredFields) {
       if (!orderData[field as keyof CreateOrderRequest]) {
@@ -365,7 +323,7 @@ async function handleCreateOrder(
           {
             status: 400,
             headers: corsHeaders,
-          },
+          }
         );
       }
     }
@@ -383,7 +341,7 @@ async function handleCreateOrder(
         {
           status: 400,
           headers: corsHeaders,
-        },
+        }
       );
     }
 
@@ -395,7 +353,7 @@ async function handleCreateOrder(
         {
           status: 400,
           headers: corsHeaders,
-        },
+        }
       );
     }
 
@@ -410,7 +368,7 @@ async function handleCreateOrder(
       {
         status: 201,
         headers: corsHeaders,
-      },
+      }
     );
   } catch (error) {
     return Response.json(
@@ -423,7 +381,7 @@ async function handleCreateOrder(
       {
         status: 500,
         headers: corsHeaders,
-      },
+      }
     );
   }
 }
@@ -464,7 +422,7 @@ serve(async (req) => {
     const DYNAMIC_ENV_ID = Deno.env.get("DYNAMIC_ENV_ID")!;
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get(
-      "SUPABASE_SERVICE_ROLE_KEY",
+      "SUPABASE_SERVICE_ROLE_KEY"
     )!;
 
     if (!DYNAMIC_ENV_ID || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -473,7 +431,7 @@ serve(async (req) => {
         {
           status: 500,
           headers: corsHeaders,
-        },
+        }
       );
     }
     // For GET requests, JWT is required
@@ -486,7 +444,7 @@ serve(async (req) => {
         {
           status: 401,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
+        }
       );
     }
 
@@ -500,7 +458,7 @@ serve(async (req) => {
         {
           status: 401,
           headers: corsHeaders,
-        },
+        }
       );
     }
 
@@ -517,7 +475,8 @@ serve(async (req) => {
 
     // Route: v1/orders/{order_id} (GET) - Get single order
     if (
-      req.method === "GET" && pathSegments.length === 2 &&
+      req.method === "GET" &&
+      pathSegments.length === 2 &&
       pathSegments[0] === "orders"
     ) {
       const orderId = pathSegments[1];
@@ -535,7 +494,7 @@ serve(async (req) => {
       {
         status: 404,
         headers: corsHeaders,
-      },
+      }
     );
   } catch (error) {
     console.error("Unhandled error:", error);
@@ -544,7 +503,7 @@ serve(async (req) => {
       {
         status: 500,
         headers: corsHeaders,
-      },
+      }
     );
   }
 });
