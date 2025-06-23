@@ -68,18 +68,23 @@ async function createOrder(
       };
     }
 
-    const { data: currency, error } = await supabase
-      .from("currencies")
-      .select("usd_price")
-      .eq("currency_id", orderData.display_currency)
-      .single();
-    if (error || !currency) {
-      return {
-        success: false,
-        error: "Currency not found",
-      };
+    // Skip currency conversion if currency is USD
+    let required_amount_usd = orderData.display_amount;
+    if (orderData.display_currency !== "USD") {
+      const { data: currency, error } = await supabase
+        .from("currencies")
+        .select("usd_price")
+        .eq("currency_id", orderData.display_currency)
+        .single();
+
+      if (error || !currency) {
+        return {
+          success: false,
+          error: "Currency not found",
+        };
+      }
+      required_amount_usd = currency.usd_price * orderData.display_amount;
     }
-    const required_amount_usd = currency.usd_price * orderData.display_amount;
 
     if (required_amount_usd < 0.01) {
       return {
@@ -92,9 +97,7 @@ async function createOrder(
 
     const paymentResponse = await createDaimoPaymentLink(
       INTENT_TITLE,
-      merchant.wallet_address,
-      Number(merchant.tokens.chain_id),
-      merchant.tokens.token_address,
+      merchant,
       required_amount_usd.toString(),
       orderNumber,
       orderData.description
@@ -138,6 +141,7 @@ async function createOrder(
       success: true,
       paymentDetail: paymentResponse.paymentDetail,
       order_id: order.order_id,
+      order_number: order.number,
     };
   } catch (error) {
     return {
@@ -416,8 +420,8 @@ async function handleCreateOrder(
       {
         success: true,
         qrcode: result.paymentDetail.url,
-        paymentDetail: result.paymentDetail,
         order_id: result.order_id,
+        order_number: result.order_number,
         message: "Order created successfully",
       },
       {
