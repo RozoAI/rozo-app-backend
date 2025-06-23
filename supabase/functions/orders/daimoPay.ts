@@ -14,13 +14,17 @@ interface DaimoPaymentResponse {
  */
 export async function createDaimoPaymentLink(
   intent: string,
-  destinationAddress: string,
-  destinationChainId: number,
-  tokenAddress: string,
+  merchant: any,
   amountUnits: string,
   orderNumber: string,
   description?: string
 ): Promise<DaimoPaymentResponse> {
+  const { wallet_address, tokens } = merchant;
+
+  const destinationAddress = wallet_address;
+  const destinationChainId = Number(tokens.chain_id);
+  const tokenAddress = tokens.token_address;
+
   try {
     // Get API key from environment variables
     const apiKey = Deno.env.get("DAIMO_API_KEY");
@@ -68,9 +72,13 @@ export async function createDaimoPaymentLink(
       destination: {
         destinationAddress,
         tokenAddress,
-        amountUnits,
+        amountUnits: String(parseFloat(amountUnits).toFixed(2)),
         chainId: destinationChainId,
         calldata: "0x",
+      },
+      externalId: orderNumber,
+      metadata: {
+        merchantId: merchant?.merchant_id,
       },
     };
 
