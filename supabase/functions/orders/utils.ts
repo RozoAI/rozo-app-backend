@@ -17,11 +17,10 @@ interface AuthResult {
 export async function verifyDynamicJWT(
   token: string,
   dynamicEnvId: string,
-  allowAdditionalAuth: boolean = false,
+  allowAdditionalAuth: boolean = false
 ): Promise<AuthResult> {
   try {
-    const jwksUrl =
-      `https://app.dynamic.xyz/api/v0/sdk/${dynamicEnvId}/.well-known/jwks`;
+    const jwksUrl = `https://app.dynamic.xyz/api/v0/sdk/${dynamicEnvId}/.well-known/jwks`;
     const client = new JwksClient({
       jwksUri: jwksUrl,
       rateLimit: true,
@@ -56,9 +55,8 @@ export async function verifyDynamicJWT(
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error
-        ? error.message
-        : "Token verification failed",
+      error:
+        error instanceof Error ? error.message : "Token verification failed",
     };
   }
 }
@@ -77,6 +75,31 @@ export function extractBearerToken(authHeader: string | null): string | null {
   }
 
   return parts[1];
+}
+
+/**
+ * Generates a human-readable order number using the current date (YYYYMMDD)
+ * followed by 8 random digits (padded with leading zeros if necessary).
+ *
+ * Example: 2025062301234567
+ *
+ * @returns A 16-digit order number string.
+ */
+export function generateOrderNumber(): string {
+  const now = new Date();
+
+  const year = now.getFullYear().toString();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  const datePart = `${year}${month}${day}`;
+
+  // Generate 8-digit random number with padding
+  const randomPart = Math.floor(Math.random() * 1e8)
+    .toString()
+    .padStart(8, "0");
+
+  return `${datePart}${randomPart}`;
 }
 
 export type { AuthResult };
