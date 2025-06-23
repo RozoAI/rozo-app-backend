@@ -138,6 +138,7 @@ async function createOrder(
       success: true,
       paymentDetail: paymentResponse.paymentDetail,
       order_id: order.order_id,
+      number: orderNumber,
     };
   } catch (error) {
     return {
@@ -418,6 +419,7 @@ async function handleCreateOrder(
         qrcode: result.paymentDetail.url,
         paymentDetail: result.paymentDetail,
         order_id: result.order_id,
+        number: result.number,
         message: "Order created successfully",
       },
       {

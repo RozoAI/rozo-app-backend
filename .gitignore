@@ -1,4 +1,5 @@
 .vscode
 .branches
 .temp
-.env*
+config.bat
+node_modules
