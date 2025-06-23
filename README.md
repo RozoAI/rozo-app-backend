@@ -23,9 +23,12 @@ This project implements the backend services for Rozo, leveraging the power and 
 │   │   │   ├── index.ts   # Main entry point for order operations
 │   │   │   ├── daimoPay.ts# Integration with Daimo payment gateway
 │   │   │   └── utils.ts   # Shared utilities
-│   │   └── payment-callback/  # Processes incoming payment webhooks
-│   │       ├── index.ts   # Main entry point for webhook handling
-│   │       └── pusher.ts  # Integration with Pusher for notifications
+│   │   ├── payment-callback/  # Processes incoming payment webhooks
+│   │   │   ├── index.ts   # Main entry point for webhook handling
+│   │   │   ├── pusher.ts  # Integration with Pusher for notifications
+│   │   └── withdrawals/   # Handles merchant withdrawal requests and processing
+│   │       ├── index.ts   # Main entry point for withdrawal operations
+│   │       └── utils.ts   # Withdrawal utility functions and validations
 │   ├── migrations/        # Database schema migrations
 │   └── seed.sql           # Initial data for development
 ```
@@ -52,20 +55,28 @@ Core backend logic is handled by these Supabase Edge Functions:
 - **Auth**: Webhook secret.
 - **Integrates with**: Pusher for real-time notifications.
 
+### 3. `/withdrawals`
+
+- **Manages**: Merchant Withdrawals (creation, retrieval).
+- **Auth**: JWT (via Dynamic).
+
 ## Setup
 
 1. **Install Supabase CLI**
+
    ```bash
    npm install -g supabase
    ```
 
 2. **Environment**
+
    ```bash
    cp example.env .env.local
    # Configure your variables
    ```
 
 3. **Start locally**
+
    ```bash
    npx supabase start
    npx supabase functions serve --env-file .env.local
@@ -77,7 +88,6 @@ Core backend logic is handled by these Supabase Edge Functions:
    npx supabase db push --include-seed
    npx supabase functions deploy
    ```
-
 
 ## Environment Variables
 

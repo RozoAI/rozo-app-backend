@@ -1,7 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createDaimoPaymentLink } from "./daimoPay.ts";
-import { extractBearerToken, verifyDynamicJWT } from "./utils.ts";
+import {
+  extractBearerToken,
+  generateOrderNumber,
+  verifyDynamicJWT,
+} from "./utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,6 +17,7 @@ const corsHeaders = {
 const INTENT_TITLE = "Rozo";
 
 interface OrderData {
+  number: string;
   merchant_id: string;
   payment_id: string;
   required_amount_usd: number;
@@ -82,12 +87,16 @@ async function createOrder(
         error: "Cannot create order with amount less than 0.01",
       };
     }
+
+    const orderNumber = generateOrderNumber();
+
     const paymentResponse = await createDaimoPaymentLink(
       INTENT_TITLE,
       merchant.wallet_address,
       Number(merchant.tokens.chain_id),
       merchant.tokens.token_address,
       required_amount_usd.toString(),
+      orderNumber,
       orderData.description
     );
 
@@ -100,6 +109,7 @@ async function createOrder(
     // Create the order with required_token from merchant's default token
     const orderToInsert: Order = {
       ...orderData,
+      number: orderNumber,
       merchant_id: merchant.merchant_id,
       payment_id: paymentResponse.paymentDetail.id,
       merchant_chain_id: merchant.tokens.chain_id,

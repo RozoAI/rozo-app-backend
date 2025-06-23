@@ -18,6 +18,7 @@ export async function createDaimoPaymentLink(
   destinationChainId: number,
   tokenAddress: string,
   amountUnits: string,
+  orderNumber: string,
   description?: string
 ): Promise<DaimoPaymentResponse> {
   try {
@@ -59,6 +60,10 @@ export async function createDaimoPaymentLink(
     const paymentRequest = {
       display: {
         intent,
+        items: [
+          { name: "Order Number", description: orderNumber },
+          ...(description ? [{ name: "Note", description }] : []),
+        ],
       },
       destination: {
         destinationAddress,
@@ -68,18 +73,6 @@ export async function createDaimoPaymentLink(
         calldata: "0x",
       },
     };
-
-    if (description) {
-      paymentRequest.display = {
-        ...paymentRequest.display,
-        items: [
-          {
-            name: "Note",
-            description,
-          },
-        ],
-      };
-    }
 
     // Make API request to Daimo Pay
     const response = await fetch("https://pay.daimo.com/api/payment", {
