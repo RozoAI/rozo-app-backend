@@ -38,6 +38,7 @@ interface CreateOrderRequest {
   display_currency: string;
   display_amount: number;
   description?: string;
+  redirect_uri?: string;
 }
 
 // Validate merchant and create order
@@ -101,7 +102,8 @@ async function createOrder(
       merchant,
       formattedUsdAmount.toString(),
       orderNumber,
-      orderData.description
+      orderData.description,
+      orderData.redirect_uri
     );
 
     if (!paymentResponse.success) {

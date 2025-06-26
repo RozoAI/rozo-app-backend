@@ -18,6 +18,7 @@ export async function createDaimoPaymentLink(
   amountUnits: string,
   orderNumber: string,
   description?: string
+  redirect_uri?: string;
 ): Promise<DaimoPaymentResponse> {
   const { wallet_address, tokens } = merchant;
 
@@ -68,6 +69,7 @@ export async function createDaimoPaymentLink(
           { name: "Order Number", description: orderNumber },
           ...(description ? [{ name: "Note", description }] : []),
         ],
+        ...(redirect_uri ? { redirectUri: redirect_uri } : {}),
       },
       destination: {
         destinationAddress,
