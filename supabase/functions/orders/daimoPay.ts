@@ -17,7 +17,8 @@ export async function createDaimoPaymentLink(
   merchant: any,
   amountUnits: string,
   orderNumber: string,
-  description?: string
+  description?: string,
+  redirect_uri?: string
 ): Promise<DaimoPaymentResponse> {
   const { wallet_address, tokens } = merchant;
 
@@ -63,11 +64,13 @@ export async function createDaimoPaymentLink(
     // Construct payment request
     const paymentRequest = {
       display: {
-        intent,
+        intent: merchant?.display_name || intent,
+        orgLogo: merchant?.logo_url || "https://www.rozo.ai/rozo-logo.png",
         items: [
           { name: "Order Number", description: orderNumber },
           ...(description ? [{ name: "Note", description }] : []),
         ],
+        ...(redirect_uri ? { redirectUri: redirect_uri } : {}),
       },
       destination: {
         destinationAddress,
