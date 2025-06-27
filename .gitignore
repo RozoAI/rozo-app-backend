@@ -1,4 +1,18 @@
-.vscode
-.branches
-.temp
+# Editor and IDE configurations
+.idea
+*.sublime-project
+*.sublime-workspace
+
+# Runtime data
 .env*
+
+# Dependency directories
+node_modules
+jspm_packages
+
+# Yarn Integrity file
+.yarn-integrity
+
+# Supabase Edge Functions
+.supabase
+functions

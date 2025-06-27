@@ -18,7 +18,7 @@ export async function createDaimoPaymentLink(
   amountUnits: string,
   orderNumber: string,
   description?: string,
-  redirect_uri?: string
+  redirect_uri?: string,
 ): Promise<DaimoPaymentResponse> {
   const { wallet_address, tokens } = merchant;
 
@@ -28,12 +28,12 @@ export async function createDaimoPaymentLink(
 
   try {
     // Get API key from environment variables
-    const apiKey = Deno.env.get("DAIMO_API_KEY");
+    const apiKey = Deno.env.get('DAIMO_API_KEY');
     if (!apiKey) {
       return {
         success: false,
         paymentDetail: {},
-        error: "DAIMO_API_KEY environment variable is not set",
+        error: 'DAIMO_API_KEY environment variable is not set',
       };
     }
 
@@ -48,7 +48,7 @@ export async function createDaimoPaymentLink(
       return {
         success: false,
         paymentDetail: {},
-        error: "Missing required parameters for Creating paymentLink",
+        error: 'Missing required parameters for Creating paymentLink',
       };
     }
 
@@ -57,7 +57,7 @@ export async function createDaimoPaymentLink(
       return {
         success: false,
         paymentDetail: {},
-        error: "amountUnits must be a valid positive number",
+        error: 'amountUnits must be a valid positive number',
       };
     }
 
@@ -65,10 +65,10 @@ export async function createDaimoPaymentLink(
     const paymentRequest = {
       display: {
         intent: merchant?.display_name || intent,
-        orgLogo: merchant?.logo_url || "https://www.rozo.ai/rozo-logo.png",
+        orgLogo: merchant?.logo_url || 'https://www.rozo.ai/rozo-logo.png',
         items: [
-          { name: "Order Number", description: orderNumber },
-          ...(description ? [{ name: "Note", description }] : []),
+          { name: 'Order Number', description: orderNumber },
+          ...(description ? [{ name: 'Note', description }] : []),
         ],
         ...(redirect_uri ? { redirectUri: redirect_uri } : {}),
       },
@@ -77,7 +77,7 @@ export async function createDaimoPaymentLink(
         tokenAddress,
         amountUnits: String(parseFloat(amountUnits).toFixed(2)),
         chainId: destinationChainId,
-        calldata: "0x",
+        calldata: '0x',
       },
       externalId: orderNumber,
       metadata: {
@@ -86,11 +86,11 @@ export async function createDaimoPaymentLink(
     };
 
     // Make API request to Daimo Pay
-    const response = await fetch("https://pay.daimo.com/api/payment", {
-      method: "POST",
+    const response = await fetch('https://pay.daimo.com/api/payment', {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
-        "Api-Key": apiKey,
+        'Content-Type': 'application/json',
+        'Api-Key': apiKey,
       },
       body: JSON.stringify(paymentRequest),
     });
@@ -114,7 +114,7 @@ export async function createDaimoPaymentLink(
     return {
       success: false,
       paymentDetail: {},
-      error: error instanceof Error ? error.message : "Unknown error occurred",
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
     };
   }
 }
