@@ -56,7 +56,8 @@ async function createOrder(
         merchant_id,
         dynamic_id,
         wallet_address,
-        tokens!inner(chain_id, token_address)
+        tokens!inner(chain_id, token_address),
+        logo_url
       `
       )
       .eq("dynamic_id", dynamicId)
@@ -113,8 +114,10 @@ async function createOrder(
       };
     }
     // Create the order with required_token from merchant's default token
+
+    const { redirect_uri, ...rest } = orderData;
     const orderToInsert: Order = {
-      ...orderData,
+      ...rest,
       number: orderNumber,
       merchant_id: merchant.merchant_id,
       payment_id: paymentResponse.paymentDetail.id,
