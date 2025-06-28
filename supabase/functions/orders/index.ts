@@ -1,20 +1,20 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createDaimoPaymentLink } from "./daimoPay.ts";
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createDaimoPaymentLink } from './daimoPay.ts';
 import {
   extractBearerToken,
   generateOrderNumber,
   verifyDynamicJWT,
-} from "./utils.ts";
+} from './utils.ts';
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
 };
 
-const INTENT_TITLE = "Rozo";
+const INTENT_TITLE = 'Rozo';
 
 interface OrderData {
   number: string;
@@ -45,12 +45,12 @@ interface CreateOrderRequest {
 async function createOrder(
   supabase: any,
   dynamicId: string,
-  orderData: CreateOrderRequest
+  orderData: CreateOrderRequest,
 ) {
   try {
     // First, verify if merchant exists and get token info
     const { data: merchant, error: merchantError } = await supabase
-      .from("merchants")
+      .from('merchants')
       .select(
         `
         merchant_id,
@@ -58,31 +58,31 @@ async function createOrder(
         wallet_address,
         tokens!inner(chain_id, token_address),
         logo_url
-      `
+      `,
       )
-      .eq("dynamic_id", dynamicId)
+      .eq('dynamic_id', dynamicId)
       .single();
 
     if (merchantError || !merchant) {
       return {
         success: false,
-        error: "Merchant not found or has no default token configured",
+        error: 'Merchant not found or has no default token configured',
       };
     }
 
     // Skip currency conversion if currency is USD
     let required_amount_usd = orderData.display_amount;
-    if (orderData.display_currency !== "USD") {
+    if (orderData.display_currency !== 'USD') {
       const { data: currency, error } = await supabase
-        .from("currencies")
-        .select("usd_price")
-        .eq("currency_id", orderData.display_currency)
+        .from('currencies')
+        .select('usd_price')
+        .eq('currency_id', orderData.display_currency)
         .single();
 
       if (error || !currency) {
         return {
           success: false,
-          error: "Currency not found",
+          error: 'Currency not found',
         };
       }
       required_amount_usd = currency.usd_price * orderData.display_amount;
@@ -91,7 +91,7 @@ async function createOrder(
     if (required_amount_usd < 0.01) {
       return {
         success: false,
-        error: "Cannot create order with amount less than 0.01",
+        error: 'Cannot create order with amount less than 0.01',
       };
     }
 
@@ -104,7 +104,7 @@ async function createOrder(
       formattedUsdAmount.toString(),
       orderNumber,
       orderData.description,
-      orderData.redirect_uri
+      orderData.redirect_uri,
     );
 
     if (!paymentResponse.success) {
@@ -115,6 +115,7 @@ async function createOrder(
     }
     // Create the order with required_token from merchant's default token
 
+    // deno-lint-ignore no-unused-vars
     const { redirect_uri, ...rest } = orderData;
     const orderToInsert: Order = {
       ...rest,
@@ -125,13 +126,13 @@ async function createOrder(
       merchant_address: merchant.wallet_address,
       required_amount_usd: formattedUsdAmount,
       required_token: merchant.tokens.token_address,
-      status: "PENDING",
+      status: 'PENDING',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
     const { data: order, error: orderError } = await supabase
-      .from("orders")
+      .from('orders')
       .insert(orderToInsert)
       .select()
       .single();
@@ -152,7 +153,7 @@ async function createOrder(
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
 }
@@ -162,13 +163,13 @@ async function handleGetSingleOrder(
   _request: Request,
   supabase: any,
   orderId: string,
-  dynamicId: string
+  dynamicId: string,
 ) {
   try {
     const { data: merchant, error: merchantError } = await supabase
-      .from("merchants")
+      .from('merchants')
       .select(`merchant_id`)
-      .eq("dynamic_id", dynamicId)
+      .eq('dynamic_id', dynamicId)
       .single();
 
     if (merchantError || !merchant) {
@@ -177,15 +178,15 @@ async function handleGetSingleOrder(
         {
           status: 404,
           headers: corsHeaders,
-        }
+        },
       );
     }
 
     const { data: order, error } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("order_id", orderId)
-      .eq("merchant_id", merchant.merchant_id)
+      .from('orders')
+      .select('*')
+      .eq('order_id', orderId)
+      .eq('merchant_id', merchant.merchant_id)
       .single();
 
     if (error) {
@@ -194,7 +195,7 @@ async function handleGetSingleOrder(
         {
           status: 404,
           headers: corsHeaders,
-        }
+        },
       );
     }
 
@@ -206,20 +207,20 @@ async function handleGetSingleOrder(
       {
         status: 200,
         headers: corsHeaders,
-      }
+      },
     );
   } catch (error) {
     return Response.json(
       {
         success: false,
         error: `Server error: ${
-          error instanceof Error ? error.message : "Unknown error"
+          error instanceof Error ? error.message : 'Unknown error'
         }`,
       },
       {
         status: 500,
         headers: corsHeaders,
-      }
+      },
     );
   }
 }
@@ -227,13 +228,13 @@ async function handleGetSingleOrder(
 async function handleGetAllOrders(
   request: Request,
   supabase: any,
-  dynamicId: string
+  dynamicId: string,
 ) {
   try {
     const { data: merchant, error: merchantError } = await supabase
-      .from("merchants")
+      .from('merchants')
       .select(`merchant_id`)
-      .eq("dynamic_id", dynamicId)
+      .eq('dynamic_id', dynamicId)
       .single();
 
     if (merchantError || !merchant) {
@@ -242,15 +243,15 @@ async function handleGetAllOrders(
         {
           status: 404,
           headers: corsHeaders,
-        }
+        },
       );
     }
 
     // Extract parameters from URL
     const url = new URL(request.url);
-    const limitParam = url.searchParams.get("limit");
-    const offsetParam = url.searchParams.get("offset");
-    const statusParam = url.searchParams.get("status");
+    const limitParam = url.searchParams.get('limit');
+    const offsetParam = url.searchParams.get('offset');
+    const statusParam = url.searchParams.get('status');
 
     // Parse and validate limit (default: 10, max: 20)
     let limit = 10; // default limit
@@ -258,11 +259,11 @@ async function handleGetAllOrders(
       const parsedLimit = parseInt(limitParam, 10);
       if (isNaN(parsedLimit) || parsedLimit < 1) {
         return Response.json(
-          { success: false, error: "Limit must be a positive integer" },
+          { success: false, error: 'Limit must be a positive integer' },
           {
             status: 400,
             headers: corsHeaders,
-          }
+          },
         );
       }
       limit = Math.min(parsedLimit, 20); // enforce maximum of 20
@@ -274,29 +275,29 @@ async function handleGetAllOrders(
       const parsedOffset = parseInt(offsetParam, 10);
       if (isNaN(parsedOffset) || parsedOffset < 0) {
         return Response.json(
-          { success: false, error: "Offset must be a non-negative integer" },
+          { success: false, error: 'Offset must be a non-negative integer' },
           {
             status: 400,
             headers: corsHeaders,
-          }
+          },
         );
       }
       offset = parsedOffset;
     }
 
     // Validate status parameter
-    const validStatuses = ["pending", "completed", "failed", "discrepancy"];
+    const validStatuses = ['pending', 'completed', 'failed', 'discrepancy'];
     if (statusParam && !validStatuses.includes(statusParam.toLowerCase())) {
       return Response.json(
         {
           success: false,
           error:
-            "Status must be one of: pending, completed, failed, discrepancy",
+            'Status must be one of: pending, completed, failed, discrepancy',
         },
         {
           status: 400,
           headers: corsHeaders,
-        }
+        },
       );
     }
 
@@ -305,30 +306,30 @@ async function handleGetAllOrders(
       if (!statusParam) return query;
 
       const status = statusParam.toLowerCase();
-      return status === "pending"
-        ? query.in("status", ["PENDING", "PROCESSING"])
-        : query.eq("status", statusParam.toUpperCase());
+      return status === 'pending'
+        ? query.in('status', ['PENDING', 'PROCESSING'])
+        : query.eq('status', statusParam.toUpperCase());
     };
 
     // Get total count and paginated orders in parallel
     const [countResult, ordersResult] = await Promise.all([
       applyStatusFilter(
         supabase
-          .from("orders")
-          .select("*", { count: "exact", head: true })
-          .eq("merchant_id", merchant.merchant_id)
+          .from('orders')
+          .select('*', { count: 'exact', head: true })
+          .eq('merchant_id', merchant.merchant_id),
       ),
       applyStatusFilter(
         supabase
-          .from("orders")
-          .select("*")
-          .eq("merchant_id", merchant.merchant_id)
+          .from('orders')
+          .select('*')
+          .eq('merchant_id', merchant.merchant_id),
       )
-        .order("created_at", { ascending: false })
+        .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1),
     ]);
 
-    const { count: totalCount, error: countError } = countResult;
+    const { count: totalCount } = countResult;
     const { data: orders, error } = ordersResult;
 
     if (error) {
@@ -337,7 +338,7 @@ async function handleGetAllOrders(
         {
           status: 400,
           headers: corsHeaders,
-        }
+        },
       );
     }
 
@@ -352,20 +353,20 @@ async function handleGetAllOrders(
       {
         status: 200,
         headers: corsHeaders,
-      }
+      },
     );
   } catch (error) {
     return Response.json(
       {
         success: false,
         error: `Server error: ${
-          error instanceof Error ? error.message : "Unknown error"
+          error instanceof Error ? error.message : 'Unknown error'
         }`,
       },
       {
         status: 500,
         headers: corsHeaders,
-      }
+      },
     );
   }
 }
@@ -373,13 +374,13 @@ async function handleGetAllOrders(
 async function handleCreateOrder(
   request: Request,
   supabase: any,
-  dynamicId: string
+  dynamicId: string,
 ) {
   try {
     const orderData: CreateOrderRequest = await request.json();
 
     // Validate required fields
-    const requiredFields = ["display_currency", "display_amount"];
+    const requiredFields = ['display_currency', 'display_amount'];
 
     for (const field of requiredFields) {
       if (!orderData[field as keyof CreateOrderRequest]) {
@@ -388,25 +389,25 @@ async function handleCreateOrder(
           {
             status: 400,
             headers: corsHeaders,
-          }
+          },
         );
       }
     }
 
     // Validate numeric fields
     if (
-      typeof orderData.display_amount !== "number" ||
+      typeof orderData.display_amount !== 'number' ||
       orderData.display_amount <= 0
     ) {
       return Response.json(
         {
           success: false,
-          error: "display_amount must be a positive number",
+          error: 'display_amount must be a positive number',
         },
         {
           status: 400,
           headers: corsHeaders,
-        }
+        },
       );
     }
 
@@ -418,7 +419,7 @@ async function handleCreateOrder(
         {
           status: 400,
           headers: corsHeaders,
-        }
+        },
       );
     }
 
@@ -428,25 +429,25 @@ async function handleCreateOrder(
         qrcode: result.paymentDetail.url,
         order_id: result.order_id,
         order_number: result.order_number,
-        message: "Order created successfully",
+        message: 'Order created successfully',
       },
       {
         status: 201,
         headers: corsHeaders,
-      }
+      },
     );
   } catch (error) {
     return Response.json(
       {
         success: false,
         error: `Server error: ${
-          error instanceof Error ? error.message : "Unknown error"
+          error instanceof Error ? error.message : 'Unknown error'
         }`,
       },
       {
         status: 500,
         headers: corsHeaders,
-      }
+      },
     );
   }
 }
@@ -467,7 +468,7 @@ async function getDynamicIdFromJWT(token: string, dynamicEnvId: string) {
   if (!dynamicId) {
     return {
       success: false,
-      error: "Merchant ID not found in token",
+      error: 'Merchant ID not found in token',
     };
   }
 
@@ -479,37 +480,37 @@ async function getDynamicIdFromJWT(token: string, dynamicEnvId: string) {
 
 // Main serve function
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const DYNAMIC_ENV_ID = Deno.env.get("DYNAMIC_ENV_ID")!;
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const DYNAMIC_ENV_ID = Deno.env.get('DYNAMIC_ENV_ID')!;
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get(
-      "SUPABASE_SERVICE_ROLE_KEY"
+      'SUPABASE_SERVICE_ROLE_KEY',
     )!;
 
     if (!DYNAMIC_ENV_ID || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       return Response.json(
-        { error: "Missing environment variables" },
+        { error: 'Missing environment variables' },
         {
           status: 500,
           headers: corsHeaders,
-        }
+        },
       );
     }
     // For GET requests, JWT is required
-    const authHeader = req.headers.get("Authorization");
+    const authHeader = req.headers.get('Authorization');
     const token = extractBearerToken(authHeader);
 
     if (!token) {
       return Response.json(
-        { error: "Missing or invalid authorization header" },
+        { error: 'Missing or invalid authorization header' },
         {
           status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
       );
     }
 
@@ -517,13 +518,13 @@ serve(async (req) => {
     if (!dynamicIdRes.success) {
       return Response.json(
         {
-          error: "Invalid or expired token",
+          error: 'Invalid or expired token',
           details: dynamicIdRes.error,
         },
         {
           status: 401,
           headers: corsHeaders,
-        }
+        },
       );
     }
 
@@ -531,44 +532,44 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const url = new URL(req.url);
-    const pathSegments = url.pathname.split("/").filter(Boolean);
+    const pathSegments = url.pathname.split('/').filter(Boolean);
 
     // Route: v1/orders (POST) - Create order (no JWT required)
-    if (req.method === "POST" && pathSegments[0] === "orders") {
+    if (req.method === 'POST' && pathSegments[0] === 'orders') {
       return await handleCreateOrder(req, supabase, dynamicId);
     }
 
     // Route: v1/orders/{order_id} (GET) - Get single order
     if (
-      req.method === "GET" &&
+      req.method === 'GET' &&
       pathSegments.length === 2 &&
-      pathSegments[0] === "orders"
+      pathSegments[0] === 'orders'
     ) {
       const orderId = pathSegments[1];
       return await handleGetSingleOrder(req, supabase, orderId, dynamicId);
     }
 
     // Route: v1/orders (GET) - Get all orders for merchant
-    if (req.method === "GET" && pathSegments[0] === "orders") {
+    if (req.method === 'GET' && pathSegments[0] === 'orders') {
       return await handleGetAllOrders(req, supabase, dynamicId);
     }
 
     // Route not found
     return Response.json(
-      { error: "Route not found" },
+      { error: 'Route not found' },
       {
         status: 404,
         headers: corsHeaders,
-      }
+      },
     );
   } catch (error) {
-    console.error("Unhandled error:", error);
+    console.error('Unhandled error:', error);
     return Response.json(
-      { error: "Internal server error" },
+      { error: 'Internal server error' },
       {
         status: 500,
         headers: corsHeaders,
-      }
+      },
     );
   }
 });

@@ -1,14 +1,21 @@
 # Rozo Backend API
 
-This project implements the backend services for Rozo, leveraging the power and scalability of Supabase Edge Functions, written in TypeScript and running on Deno. This serverless architecture allows for efficient, globally distributed functions that execute close to your users and your Supabase PostgreSQL database, ensuring low latency and high performance.
+This project implements the backend services for Rozo, leveraging the power and
+scalability of Supabase Edge Functions, written in TypeScript and running on
+Deno. This serverless architecture allows for efficient, globally distributed
+functions that execute close to your users and your Supabase PostgreSQL
+database, ensuring low latency and high performance.
 
 ## Tech Stack
 
 - **Database**: PostgreSQL (Supabase)
 - **Compute**: Supabase Edge Functions (Deno Runtime, TypeScript)
-- **Authentication**: [Dynamic](https://www.dynamic.xyz/) (Wallet-based JWT authentication)
-- **Payments**: [Daimo Pay](https://pay.daimo.com/) (Payment processing and webhooks)
-- **Real-time Notifications**: [Pusher](https://pusher.com/) (For instant updates on payment status)
+- **Authentication**: [Dynamic](https://www.dynamic.xyz/) (Wallet-based JWT
+  authentication)
+- **Payments**: [Daimo Pay](https://pay.daimo.com/) (Payment processing and
+  webhooks)
+- **Real-time Notifications**: [Pusher](https://pusher.com/) (For instant
+  updates on payment status)
 
 ## Project Structure
 
@@ -91,4 +98,10 @@ Core backend logic is handled by these Supabase Edge Functions:
 
 ## Environment Variables
 
-See `example.env` for required configuration including Supabase, Dynamic, Daimo, and Pusher credentials.
+See `example.env` for required configuration including Supabase, Dynamic, Daimo,
+and Pusher credentials.
+
+## Linting and Formatting
+
+This project uses `deno lint` and `deno fmt` to enforce code quality and
+consistency. Please run `deno lint` and `deno fmt` before committing changes.

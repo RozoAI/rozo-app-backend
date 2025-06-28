@@ -1,6 +1,7 @@
 # Currency Update Function
 
-This Supabase Edge Function automatically updates currency exchange rates in the database on a daily basis.
+This Supabase Edge Function automatically updates currency exchange rates in the
+database on a daily basis.
 
 ## Features
 
@@ -30,7 +31,8 @@ This schedule runs the function at midnight (00:00) UTC every day.
 
 ## Manual Execution
 
-You can manually trigger the function using the Supabase CLI or with a curl command:
+You can manually trigger the function using the Supabase CLI or with a curl
+command:
 
 ```bash
 # Using Supabase CLI

@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/hook.sh"
+
+echo "Running Deno formatting check..."
+deno fmt --check supabase/functions/ || { echo "Deno formatting issues found. Please run 'deno fmt'."; exit 1; }
+
+echo "Running Deno linting..."
+deno lint supabase/functions/ || { echo "Deno linting issues found. Please fix them."; exit 1; }
+
+echo "Pre-commit checks passed!"
