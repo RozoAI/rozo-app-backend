@@ -1,14 +1,14 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-import { pushNotification } from './pusher.ts';
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { pushNotification } from "./pusher.ts";
 
 // Payment status enum matching your database
 enum PaymentStatus {
-  PENDING = 'PENDING',
-  PROCESSING = 'PROCESSING',
-  COMPLETED = 'COMPLETED',
-  FAILED = 'FAILED',
-  DISCREPANCY = 'DISCREPANCY',
+  PENDING = "PENDING",
+  PROCESSING = "PROCESSING",
+  COMPLETED = "COMPLETED",
+  FAILED = "FAILED",
+  DISCREPANCY = "DISCREPANCY",
 }
 
 // Status hierarchy for proper state transitions
@@ -22,10 +22,10 @@ const STATUS_HIERARCHY = {
 
 interface DaimoWebhookEvent {
   type:
-    | 'payment_started'
-    | 'payment_completed'
-    | 'payment_bounced'
-    | 'payment_refunded';
+    | "payment_started"
+    | "payment_completed"
+    | "payment_bounced"
+    | "payment_refunded";
   paymentId: string;
   chainId: number;
   txHash: string;
@@ -84,31 +84,31 @@ interface OrderRecord {
 
 serve(async (req: Request) => {
   // Only allow POST requests
-  if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 });
+  if (req.method !== "POST") {
+    return new Response("Method not allowed", { status: 405 });
   }
 
   try {
     // Verify webhook authentication
-    const authHeader = req.headers.get('Authorization');
-    const expectedToken = Deno.env.get('DAIMO_WEBHOOK_SECRET');
+    const authHeader = req.headers.get("Authorization");
+    const expectedToken = Deno.env.get("DAIMO_WEBHOOK_SECRET");
 
     if (!expectedToken) {
-      console.error('DAIMO_WEBHOOK_SECRET environment variable not set');
-      return new Response('Server configuration error', { status: 500 });
+      console.error("DAIMO_WEBHOOK_SECRET environment variable not set");
+      return new Response("Server configuration error", { status: 500 });
     }
 
     if (!authHeader) {
-      console.error('Missing Authorization header');
-      return new Response('Unauthorized: Missing authorization header', {
+      console.error("Missing Authorization header");
+      return new Response("Unauthorized: Missing authorization header", {
         status: 401,
       });
     }
 
     // Check if it's Basic auth format
-    if (!authHeader.startsWith('Basic ')) {
-      console.error('Invalid Authorization header format');
-      return new Response('Unauthorized: Invalid authorization format', {
+    if (!authHeader.startsWith("Basic ")) {
+      console.error("Invalid Authorization header format");
+      return new Response("Unauthorized: Invalid authorization format", {
         status: 401,
       });
     }
@@ -116,12 +116,13 @@ serve(async (req: Request) => {
     // Extract and verify the token
     const providedToken = authHeader.substring(6); // Remove "Basic " prefix
     if (providedToken !== expectedToken) {
-      console.error('Invalid webhook token');
-      return new Response('Unauthorized: Invalid token', { status: 401 });
+      console.error("Invalid webhook token");
+      return new Response("Unauthorized: Invalid token", { status: 401 });
     }
+
     // Initialize Supabase client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Parse webhook payload
@@ -137,32 +138,35 @@ serve(async (req: Request) => {
       !webhookEvent.paymentId ||
       !webhookEvent.payment
     ) {
-      console.error('Invalid webhook payload: missing required fields');
-      return new Response('Invalid payload', { status: 400 });
+      console.error("Invalid webhook payload: missing required fields");
+      return new Response("Invalid payload", { status: 400 });
     }
 
     // Skip test events in production (optional)
-    if (webhookEvent.isTestEvent && Deno.env.get('DENO_ENV') === 'production') {
-      console.log('Skipping test event in production');
-      return new Response('Test event skipped', { status: 200 });
+    if (webhookEvent.isTestEvent && Deno.env.get("DENO_ENV") === "production") {
+      console.log("Skipping test event in production");
+      return new Response("Test event skipped", { status: 200 });
     }
+
+    const isOrder = webhookEvent.payment.metadata?.isOrder === "true";
+    const tableName = isOrder ? "orders" : "deposits";
 
     // Find the order by payment_id
     const { data: existingOrder, error: fetchError } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('payment_id', webhookEvent.paymentId)
+      .from(tableName)
+      .select("*")
+      .eq("payment_id", webhookEvent.paymentId)
       .single();
 
-    if (fetchError && fetchError.code !== 'PGRST116') {
+    if (fetchError && fetchError.code !== "PGRST116") {
       // PGRST116 = no rows returned
-      console.error('Database error fetching order:', fetchError);
-      return new Response('Database error', { status: 500 });
+      console.error("Database error fetching order:", fetchError);
+      return new Response("Database error", { status: 500 });
     }
 
     if (!existingOrder) {
       console.error(`No order found for payment_id: ${webhookEvent.paymentId}`);
-      return new Response('Order not found', { status: 404 });
+      return new Response("Order not found", { status: 404 });
     }
 
     // Validate payment details match order
@@ -171,9 +175,9 @@ serve(async (req: Request) => {
       webhookEvent,
     );
     if (!validationResult.isValid) {
-      console.error('Payment validation failed:', validationResult.errors);
+      console.error("Payment validation failed:", validationResult.errors);
       return new Response(
-        `Validation failed: ${validationResult.errors.join(', ')}`,
+        `Validation failed: ${validationResult.errors.join(", ")}`,
         { status: 400 },
       );
     }
@@ -190,7 +194,7 @@ serve(async (req: Request) => {
       console.log(
         `Ignoring backward status transition from ${currentStatus} to ${newStatus} for payment ${webhookEvent.paymentId}`,
       );
-      return new Response('Status transition ignored', { status: 200 });
+      return new Response("Status transition ignored", { status: 200 });
     }
 
     // If status is the same, check if this is a duplicate webhook
@@ -198,11 +202,11 @@ serve(async (req: Request) => {
       console.log(
         `Duplicate webhook received for payment ${webhookEvent.paymentId} with status ${newStatus}`,
       );
-      return new Response('Duplicate webhook ignored', { status: 200 });
+      return new Response("Duplicate webhook ignored", { status: 200 });
     }
 
-    // Update the order with new status and webhook payload
-    const updateData: Partial<OrderRecord> = {
+    // Prepare common update data
+    const baseUpdateData = {
       status: newStatus,
       callback_payload: webhookEvent,
       source_txn_hash: webhookEvent.payment.source?.txHash,
@@ -214,20 +218,26 @@ serve(async (req: Request) => {
 
     // Add transaction hashes based on webhook type
     if (
-      webhookEvent.type === 'payment_started' &&
+      webhookEvent.type === "payment_started" &&
       webhookEvent.payment.source?.txHash
     ) {
-      updateData.source_txn_hash = webhookEvent.payment.source.txHash;
+      baseUpdateData.source_txn_hash = webhookEvent.payment.source.txHash;
     }
 
+    // For orders, use Partial<OrderRecord> typing; for deposits, use the base data
+    const updateData = isOrder
+      ? baseUpdateData as Partial<OrderRecord>
+      : baseUpdateData;
+
     const { error: updateError } = await supabase
-      .from('orders')
+      .from(tableName)
       .update(updateData)
-      .eq('payment_id', webhookEvent.paymentId);
+      .eq("payment_id", webhookEvent.paymentId);
 
     if (updateError) {
-      console.error('Error updating order:', updateError);
-      return new Response('Failed to update order', { status: 500 });
+      const recordType = isOrder ? "order" : "deposit";
+      console.error(`Error updating ${recordType}:`, updateError);
+      return new Response(`Failed to update ${recordType}`, { status: 500 });
     }
 
     console.log(
@@ -237,10 +247,10 @@ serve(async (req: Request) => {
     // Handle specific webhook types
     await handleWebhookType(webhookEvent, existingOrder);
 
-    return new Response('Webhook processed successfully', { status: 200 });
+    return new Response("Webhook processed successfully", { status: 200 });
   } catch (error) {
-    console.error('Webhook processing error:', error);
-    return new Response('Internal server error', { status: 500 });
+    console.error("Webhook processing error:", error);
+    return new Response("Internal server error", { status: 500 });
   }
 });
 
@@ -249,13 +259,13 @@ serve(async (req: Request) => {
  */
 function mapWebhookTypeToStatus(webhookType: string): PaymentStatus {
   switch (webhookType) {
-    case 'payment_started':
+    case "payment_started":
       return PaymentStatus.PROCESSING;
-    case 'payment_completed':
+    case "payment_completed":
       return PaymentStatus.COMPLETED;
-    case 'payment_bounced':
+    case "payment_bounced":
       return PaymentStatus.DISCREPANCY;
-    case 'payment_refunded':
+    case "payment_refunded":
       return PaymentStatus.FAILED;
     default:
       throw new Error(`Unknown webhook type: ${webhookType}`);
@@ -268,7 +278,7 @@ function mapWebhookTypeToStatus(webhookType: string): PaymentStatus {
 function validatePaymentDetails(
   order: OrderRecord,
   webhook: DaimoWebhookEvent,
-): { isValid: boolean; errors: string[] } {
+): { isValid: boolean; errors: string[]; isOrder: boolean } {
   const errors: string[] = [];
 
   // Validate order number
@@ -342,14 +352,14 @@ async function handleWebhookType(
   order: OrderRecord,
 ): Promise<void> {
   switch (webhook.type) {
-    case 'payment_started':
+    case "payment_started":
       console.log(
         `Payment started for order ${order.order_id}: source tx ${webhook.payment.source?.txHash} on chain ${webhook.payment.source?.chainId}`,
       );
       // Add any payment started specific logic here
       break;
 
-    case 'payment_completed': {
+    case "payment_completed": {
       console.log(
         `Payment completed for order ${order.order_id}: destination tx ${webhook.txHash} on chain ${webhook.chainId}`,
       );
@@ -357,7 +367,7 @@ async function handleWebhookType(
         order.merchant_id,
         webhook.type,
         {
-          message: 'Payment completed',
+          message: "Payment completed",
           order_id: order.order_id,
           display_currency: order.display_currency,
           display_amount: order.display_amount,
@@ -365,21 +375,21 @@ async function handleWebhookType(
       );
       if (!paymentCompletedNotification.success) {
         console.error(
-          'Failed to Send Payment Notification:',
+          "Failed to Send Payment Notification:",
           paymentCompletedNotification.error,
         );
       }
       break;
     }
 
-    case 'payment_bounced':
+    case "payment_bounced":
       console.log(
         `Payment bounced for order ${order.order_id}: tx ${webhook.txHash} on chain ${webhook.chainId}`,
       );
       // Add any payment bounce specific logic here (e.g., notify customer)
       break;
 
-    case 'payment_refunded': {
+    case "payment_refunded": {
       console.log(
         `Payment refunded for order ${order.order_id}: tx ${webhook.txHash} on chain ${webhook.chainId}`,
       );
@@ -387,7 +397,7 @@ async function handleWebhookType(
         order.merchant_id,
         webhook.type,
         {
-          message: 'Payment Refunded',
+          message: "Payment Refunded",
           order_id: order.order_id,
           display_currency: order.display_currency,
           display_amount: order.display_amount,
@@ -395,7 +405,7 @@ async function handleWebhookType(
       );
       if (!paymentRefundNotification.success) {
         console.error(
-          'Failed to Send Payment Notification:',
+          "Failed to Send Payment Notification:",
           paymentRefundNotification.error,
         );
       }

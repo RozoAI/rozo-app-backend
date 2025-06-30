@@ -1,5 +1,5 @@
-import jwt, { JwtPayload } from "npm:jsonwebtoken";
-import { JwksClient } from "npm:jwks-rsa";
+import jwt, { JwtPayload } from 'npm:jsonwebtoken';
+import { JwksClient } from 'npm:jwks-rsa';
 
 interface AuthResult {
   success: boolean;
@@ -40,12 +40,12 @@ export async function verifyDynamicJWT(
 
     // Check for additional auth requirements
     if (
-      decodedToken.scopes?.includes("requiresAdditionalAuth") &&
+      decodedToken.scopes?.includes('requiresAdditionalAuth') &&
       !allowAdditionalAuth
     ) {
       return {
         success: false,
-        error: "Additional verification required",
+        error: 'Additional verification required',
       };
     }
 
@@ -58,9 +58,35 @@ export async function verifyDynamicJWT(
       success: false,
       error: error instanceof Error
         ? error.message
-        : "Token verification failed",
+        : 'Token verification failed',
     };
   }
+}
+
+// Helper function to extract merchant_id from JWT
+export async function getDynamicIdFromJWT(token: string, dynamicEnvId: string) {
+  const tokenVerification = await verifyDynamicJWT(token, dynamicEnvId);
+
+  if (!tokenVerification.success) {
+    return {
+      success: false,
+      error: tokenVerification.error,
+    };
+  }
+
+  // Extract merchant_id from JWT payload (assuming it's stored in 'sub' or custom claim)
+  const dynamicId = tokenVerification.payload.sub;
+  if (!dynamicId) {
+    return {
+      success: false,
+      error: 'Merchant ID not found in token',
+    };
+  }
+
+  return {
+    success: true,
+    dynamicId,
+  };
 }
 
 /**
@@ -71,12 +97,37 @@ export async function verifyDynamicJWT(
 export function extractBearerToken(authHeader: string | null): string | null {
   if (!authHeader) return null;
 
-  const parts = authHeader.split(" ");
-  if (parts.length !== 2 || parts[0] !== "Bearer") {
+  const parts = authHeader.split(' ');
+  if (parts.length !== 2 || parts[0] !== 'Bearer') {
     return null;
   }
 
   return parts[1];
+}
+
+/**
+ * Generates a human-readable order number using the current date (YYYYMMDD)
+ * followed by 8 random digits (padded with leading zeros if necessary).
+ *
+ * Example: 2025062301234567
+ *
+ * @returns A 16-digit order number string.
+ */
+export function generateOrderNumber(): string {
+  const now = new Date();
+
+  const year = now.getFullYear().toString();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+
+  const datePart = `${year}${month}${day}`;
+
+  // Generate 8-digit random number with padding
+  const randomPart = Math.floor(Math.random() * 1e8)
+    .toString()
+    .padStart(8, '0');
+
+  return `${datePart}${randomPart}`;
 }
 
 export type { AuthResult };

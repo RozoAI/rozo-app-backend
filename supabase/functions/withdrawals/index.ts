@@ -3,55 +3,30 @@
 // This enables autocomplete, go to definition, etc.
 
 // Setup type definitions for built-in Supabase Runtime APIs
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
-import { extractBearerToken, verifyDynamicJWT } from './utils.ts';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { getDynamicIdFromJWT } from "../../_shared/utils.ts";
+import { extractBearerToken } from "./utils.ts";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
 };
-
-// Helper function to extract merchant_id from JWT
-async function getDynamicIdFromJWT(token: string, dynamicEnvId: string) {
-  const tokenVerification = await verifyDynamicJWT(token, dynamicEnvId);
-
-  if (!tokenVerification.success) {
-    return {
-      success: false,
-      error: tokenVerification.error,
-    };
-  }
-
-  // Extract merchant_id from JWT payload (assuming it's stored in 'sub' or custom claim)
-  const dynamicId = tokenVerification.payload.sub;
-  if (!dynamicId) {
-    return {
-      success: false,
-      error: 'Merchant ID not found in token',
-    };
-  }
-
-  return {
-    success: true,
-    dynamicId: dynamicId,
-  };
-}
 
 async function handleGetRequest(supabase: any, dynamicId: string) {
   try {
     // Get merchant_id from the user's metadata or profile
     const { data: merchantData, error: merchantError } = await supabase
-      .from('merchants')
-      .select('merchant_id')
-      .eq('dynamic_id', dynamicId)
+      .from("merchants")
+      .select("merchant_id")
+      .eq("dynamic_id", dynamicId)
       .single();
 
     if (merchantError || !merchantData) {
       return Response.json(
-        { error: 'Merchant not found' },
+        { error: "Merchant not found" },
         {
           status: 404,
           headers: corsHeaders,
@@ -61,7 +36,7 @@ async function handleGetRequest(supabase: any, dynamicId: string) {
 
     // Retrieve withdrawal histories for the merchant
     const { data: withdrawals, error: withdrawalError } = await supabase
-      .from('withdrawals')
+      .from("withdrawals")
       .select(
         `
         withdrawal_id,
@@ -73,12 +48,12 @@ async function handleGetRequest(supabase: any, dynamicId: string) {
         updated_at
       `,
       )
-      .eq('merchant_id', merchantData.merchant_id)
-      .order('created_at', { ascending: false });
+      .eq("merchant_id", merchantData.merchant_id)
+      .order("created_at", { ascending: false });
 
     if (withdrawalError) {
       return Response.json(
-        { error: 'Failed to retrieve withdrawal histories' },
+        { error: "Failed to retrieve withdrawal histories" },
         {
           status: 500,
           headers: corsHeaders,
@@ -98,9 +73,9 @@ async function handleGetRequest(supabase: any, dynamicId: string) {
       },
     );
   } catch (error) {
-    console.error('Error in handleGetRequest:', error);
+    console.error("Error in handleGetRequest:", error);
     return Response.json(
-      { error: 'Internal server error' },
+      { error: "Internal server error" },
       {
         status: 500,
         headers: corsHeaders,
@@ -117,14 +92,14 @@ async function handlePostRequest(
   try {
     // Get merchant_id from the user's metadata or profile
     const { data: merchantData, error: merchantError } = await supabase
-      .from('merchants')
-      .select('merchant_id')
-      .eq('dynamic_id', dynamicId)
+      .from("merchants")
+      .select("merchant_id")
+      .eq("dynamic_id", dynamicId)
       .single();
 
     if (merchantError || !merchantData) {
       return Response.json(
-        { error: 'Merchant not found' },
+        { error: "Merchant not found" },
         {
           status: 404,
           headers: corsHeaders,
@@ -139,7 +114,7 @@ async function handlePostRequest(
     // Validate required fields
     if (!recipient || !amount || !currency) {
       return Response.json(
-        { error: 'Missing required fields: recipient, amount, currency' },
+        { error: "Missing required fields: recipient, amount, currency" },
         {
           status: 400,
           headers: corsHeaders,
@@ -148,9 +123,9 @@ async function handlePostRequest(
     }
 
     // Validate amount is positive
-    if (typeof amount !== 'number' || amount <= 0) {
+    if (typeof amount !== "number" || amount <= 0) {
       return Response.json(
-        { error: 'Amount must be a positive number' },
+        { error: "Amount must be a positive number" },
         {
           status: 400,
           headers: corsHeaders,
@@ -160,7 +135,7 @@ async function handlePostRequest(
 
     // Insert withdrawal record
     const { data: withdrawal, error: withdrawalError } = await supabase
-      .from('withdrawals')
+      .from("withdrawals")
       .insert({
         merchant_id: merchantData.merchant_id,
         recipient: recipient,
@@ -174,7 +149,7 @@ async function handlePostRequest(
 
     if (withdrawalError) {
       return Response.json(
-        { error: 'Failed to create withdrawal request' },
+        { error: "Failed to create withdrawal request" },
         {
           status: 500,
           headers: corsHeaders,
@@ -193,9 +168,9 @@ async function handlePostRequest(
       },
     );
   } catch (error) {
-    console.error('Error in handlePostRequest:', error);
+    console.error("Error in handlePostRequest:", error);
     return Response.json(
-      { error: 'Internal server error' },
+      { error: "Internal server error" },
       {
         status: 500,
         headers: corsHeaders,
@@ -205,18 +180,18 @@ async function handlePostRequest(
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    const DYNAMIC_ENV_ID = Deno.env.get('DYNAMIC_ENV_ID')!;
-    const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const DYNAMIC_ENV_ID = Deno.env.get("DYNAMIC_ENV_ID")!;
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!DYNAMIC_ENV_ID || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       return Response.json(
-        { error: 'Missing environment variables' },
+        { error: "Missing environment variables" },
         {
           status: 500,
           headers: corsHeaders,
@@ -224,15 +199,15 @@ Deno.serve(async (req) => {
       );
     }
 
-    const authHeader = req.headers.get('Authorization');
+    const authHeader = req.headers.get("Authorization");
     const token = extractBearerToken(authHeader);
 
     if (!token) {
       return new Response(
-        JSON.stringify({ error: 'Missing or invalid authorization header' }),
+        JSON.stringify({ error: "Missing or invalid authorization header" }),
         {
           status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         },
       );
     }
@@ -241,7 +216,7 @@ Deno.serve(async (req) => {
     if (!dynamicIdRes.success) {
       return Response.json(
         {
-          error: 'Invalid or expired token',
+          error: "Invalid or expired token",
           details: dynamicIdRes.error,
         },
         {
@@ -255,9 +230,9 @@ Deno.serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     switch (req.method) {
-      case 'GET':
+      case "GET":
         return await handleGetRequest(supabase, dynamicId);
-      case 'POST':
+      case "POST":
         return await handlePostRequest(req, supabase, dynamicId);
       default:
         return Response.json(
@@ -269,9 +244,9 @@ Deno.serve(async (req) => {
         );
     }
   } catch (error) {
-    console.error('Unhandled error:', error);
+    console.error("Unhandled error:", error);
     return Response.json(
-      { error: 'Internal server error' },
+      { error: "Internal server error" },
       {
         status: 500,
         headers: corsHeaders,
