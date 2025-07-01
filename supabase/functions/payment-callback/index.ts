@@ -80,9 +80,10 @@ interface OrderRecord {
   source_token_address: string;
   source_token_amount: number;
   number: string;
+  deposit_id?: string;
 }
 
-interface DepositRecord extends Omit<OrderRecord, 'deposit_id'> {
+interface DepositRecord extends Omit<OrderRecord, 'order_id'> {
   deposit_id: string;
 }
 
@@ -282,7 +283,7 @@ function mapWebhookTypeToStatus(webhookType: string): PaymentStatus {
 function validatePaymentDetails(
   order: OrderRecord | DepositRecord,
   webhook: DaimoWebhookEvent,
-): { isValid: boolean; errors: string[]; isOrder: boolean } {
+): { isValid: boolean; errors: string[] } {
   const errors: string[] = [];
 
   // Validate order number
@@ -355,24 +356,26 @@ async function handleWebhookType(
   webhook: DaimoWebhookEvent,
   order: OrderRecord,
 ): Promise<void> {
+  const orderId = order.order_id || order.deposit_id;
+
   switch (webhook.type) {
     case 'payment_started':
       console.log(
-        `Payment started for order ${order.order_id}: source tx ${webhook.payment.source?.txHash} on chain ${webhook.payment.source?.chainId}`,
+        `Payment started for order ${orderId}: source tx ${webhook.payment.source?.txHash} on chain ${webhook.payment.source?.chainId}`,
       );
       // Add any payment started specific logic here
       break;
 
     case 'payment_completed': {
       console.log(
-        `Payment completed for order ${order.order_id}: destination tx ${webhook.txHash} on chain ${webhook.chainId}`,
+        `Payment completed for order ${orderId}: destination tx ${webhook.txHash} on chain ${webhook.chainId}`,
       );
       const paymentCompletedNotification = await pushNotification(
         order.merchant_id,
         webhook.type,
         {
           message: 'Payment completed',
-          order_id: order.order_id,
+          order_id: orderId,
           display_currency: order.display_currency,
           display_amount: order.display_amount,
         },
@@ -388,21 +391,21 @@ async function handleWebhookType(
 
     case 'payment_bounced':
       console.log(
-        `Payment bounced for order ${order.order_id}: tx ${webhook.txHash} on chain ${webhook.chainId}`,
+        `Payment bounced for order ${orderId}: tx ${webhook.txHash} on chain ${webhook.chainId}`,
       );
       // Add any payment bounce specific logic here (e.g., notify customer)
       break;
 
     case 'payment_refunded': {
       console.log(
-        `Payment refunded for order ${order.order_id}: tx ${webhook.txHash} on chain ${webhook.chainId}`,
+        `Payment refunded for order ${orderId}: tx ${webhook.txHash} on chain ${webhook.chainId}`,
       );
       const paymentRefundNotification = await pushNotification(
         order.merchant_id,
         webhook.type,
         {
           message: 'Payment Refunded',
-          order_id: order.order_id,
+          order_id: orderId,
           display_currency: order.display_currency,
           display_amount: order.display_amount,
         },
