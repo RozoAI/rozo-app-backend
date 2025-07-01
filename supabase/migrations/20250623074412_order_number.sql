@@ -11,16 +11,12 @@ SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
-
 -- Add number column to orders table
 ALTER TABLE "public"."orders" 
 ADD COLUMN "number" "text";
-
 -- Add unique constraint for order number
 ALTER TABLE ONLY "public"."orders"
     ADD CONSTRAINT "orders_number_key" UNIQUE ("number");
-
 -- Create index for order number
 CREATE INDEX "orders_number_idx" ON "public"."orders" USING "btree" ("number");
-
 RESET ALL;

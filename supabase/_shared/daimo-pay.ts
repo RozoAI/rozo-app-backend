@@ -4,6 +4,16 @@ interface DaimoPaymentResponse {
   error?: string;
 }
 
+type CreateDaimoPaymentLinkProps = {
+  intent: string,
+  merchant: any,
+  amountUnits: string,
+  orderNumber: string,
+  description?: string,
+  redirect_uri?: string,
+  isOrder?: boolean;
+}
+
 /**
  * @param intent - Purpose of the payment (e.g., "Pay Order", "Purchase", "Deposit")
  * @param destinationAddress - Recipient wallet address
@@ -12,14 +22,15 @@ interface DaimoPaymentResponse {
  * @param amountUnits - Amount to receive as string (e.g., "1.00", "10.50")
  * @returns Payment link URL and payment ID
  */
-export async function createDaimoPaymentLink(
-  intent: string,
-  merchant: any,
-  amountUnits: string,
-  orderNumber: string,
-  description?: string,
-  redirect_uri?: string,
-): Promise<DaimoPaymentResponse> {
+export async function createDaimoPaymentLink({
+  intent,
+  amountUnits,
+  merchant,
+  orderNumber,
+  description,
+  redirect_uri,
+  isOrder = true
+}: CreateDaimoPaymentLinkProps): Promise<DaimoPaymentResponse> {
   const { wallet_address, tokens } = merchant;
 
   const destinationAddress = wallet_address;
@@ -67,7 +78,7 @@ export async function createDaimoPaymentLink(
         intent: merchant?.display_name || intent,
         orgLogo: merchant?.logo_url || 'https://www.rozo.ai/rozo-logo.png',
         items: [
-          { name: 'Order Number', description: orderNumber },
+          { name: isOrder ? 'Order Number' : 'Deposit Number', description: orderNumber },
           ...(description ? [{ name: 'Note', description }] : []),
         ],
         ...(redirect_uri ? { redirectUri: redirect_uri } : {}),
@@ -82,6 +93,7 @@ export async function createDaimoPaymentLink(
       externalId: orderNumber,
       metadata: {
         merchantId: merchant?.merchant_id,
+        isOrder: `${isOrder}`
       },
     };
 

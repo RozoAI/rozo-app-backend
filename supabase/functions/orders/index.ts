@@ -1,11 +1,11 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { createDaimoPaymentLink } from './daimoPay.ts';
+import { createDaimoPaymentLink } from '../../_shared/daimo-pay.ts';
 import {
-  extractBearerToken,
   generateOrderNumber,
-  verifyDynamicJWT,
-} from './utils.ts';
+  getDynamicIdFromJWT,
+} from '../../_shared/utils.ts';
+import { extractBearerToken } from './utils.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -98,14 +98,14 @@ async function createOrder(
     const formattedUsdAmount = parseFloat(required_amount_usd.toFixed(2));
     const orderNumber = generateOrderNumber();
 
-    const paymentResponse = await createDaimoPaymentLink(
-      INTENT_TITLE,
+    const paymentResponse = await createDaimoPaymentLink({
+      intent: INTENT_TITLE,
       merchant,
-      formattedUsdAmount.toString(),
       orderNumber,
-      orderData.description,
-      orderData.redirect_uri,
-    );
+      amountUnits: formattedUsdAmount.toString(),
+      description: orderData.description,
+      redirect_uri: orderData.redirect_uri,
+    });
 
     if (!paymentResponse.success) {
       return {
@@ -450,32 +450,6 @@ async function handleCreateOrder(
       },
     );
   }
-}
-
-// Helper function to extract merchant_id from JWT
-async function getDynamicIdFromJWT(token: string, dynamicEnvId: string) {
-  const tokenVerification = await verifyDynamicJWT(token, dynamicEnvId);
-
-  if (!tokenVerification.success) {
-    return {
-      success: false,
-      error: tokenVerification.error,
-    };
-  }
-
-  // Extract merchant_id from JWT payload (assuming it's stored in 'sub' or custom claim)
-  const dynamicId = tokenVerification.payload.sub;
-  if (!dynamicId) {
-    return {
-      success: false,
-      error: 'Merchant ID not found in token',
-    };
-  }
-
-  return {
-    success: true,
-    dynamicId: dynamicId,
-  };
 }
 
 // Main serve function

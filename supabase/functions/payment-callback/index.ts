@@ -80,6 +80,11 @@ interface OrderRecord {
   source_token_address: string;
   source_token_amount: number;
   number: string;
+  deposit_id?: string;
+}
+
+interface DepositRecord extends Omit<OrderRecord, 'order_id'> {
+  deposit_id: string;
 }
 
 serve(async (req: Request) => {
@@ -119,6 +124,7 @@ serve(async (req: Request) => {
       console.error('Invalid webhook token');
       return new Response('Unauthorized: Invalid token', { status: 401 });
     }
+
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -147,9 +153,12 @@ serve(async (req: Request) => {
       return new Response('Test event skipped', { status: 200 });
     }
 
+    const isOrder = webhookEvent.payment.metadata?.isOrder === 'true';
+    const tableName = isOrder ? 'orders' : 'deposits';
+
     // Find the order by payment_id
     const { data: existingOrder, error: fetchError } = await supabase
-      .from('orders')
+      .from(tableName)
       .select('*')
       .eq('payment_id', webhookEvent.paymentId)
       .single();
@@ -201,8 +210,8 @@ serve(async (req: Request) => {
       return new Response('Duplicate webhook ignored', { status: 200 });
     }
 
-    // Update the order with new status and webhook payload
-    const updateData: Partial<OrderRecord> = {
+    // Prepare common update data
+    const baseUpdateData = {
       status: newStatus,
       callback_payload: webhookEvent,
       source_txn_hash: webhookEvent.payment.source?.txHash,
@@ -217,17 +226,23 @@ serve(async (req: Request) => {
       webhookEvent.type === 'payment_started' &&
       webhookEvent.payment.source?.txHash
     ) {
-      updateData.source_txn_hash = webhookEvent.payment.source.txHash;
+      baseUpdateData.source_txn_hash = webhookEvent.payment.source.txHash;
     }
 
+    // For orders, use Partial<OrderRecord> typing; for deposits, use the base data
+    const updateData = isOrder
+      ? baseUpdateData as Partial<OrderRecord>
+      : baseUpdateData;
+
     const { error: updateError } = await supabase
-      .from('orders')
+      .from(tableName)
       .update(updateData)
       .eq('payment_id', webhookEvent.paymentId);
 
     if (updateError) {
-      console.error('Error updating order:', updateError);
-      return new Response('Failed to update order', { status: 500 });
+      const recordType = isOrder ? 'order' : 'deposit';
+      console.error(`Error updating ${recordType}:`, updateError);
+      return new Response(`Failed to update ${recordType}`, { status: 500 });
     }
 
     console.log(
@@ -266,7 +281,7 @@ function mapWebhookTypeToStatus(webhookType: string): PaymentStatus {
  * Validates that the webhook payment details match the stored order
  */
 function validatePaymentDetails(
-  order: OrderRecord,
+  order: OrderRecord | DepositRecord,
   webhook: DaimoWebhookEvent,
 ): { isValid: boolean; errors: string[] } {
   const errors: string[] = [];
@@ -341,24 +356,26 @@ async function handleWebhookType(
   webhook: DaimoWebhookEvent,
   order: OrderRecord,
 ): Promise<void> {
+  const orderId = order.order_id || order.deposit_id;
+
   switch (webhook.type) {
     case 'payment_started':
       console.log(
-        `Payment started for order ${order.order_id}: source tx ${webhook.payment.source?.txHash} on chain ${webhook.payment.source?.chainId}`,
+        `Payment started for order ${orderId}: source tx ${webhook.payment.source?.txHash} on chain ${webhook.payment.source?.chainId}`,
       );
       // Add any payment started specific logic here
       break;
 
     case 'payment_completed': {
       console.log(
-        `Payment completed for order ${order.order_id}: destination tx ${webhook.txHash} on chain ${webhook.chainId}`,
+        `Payment completed for order ${orderId}: destination tx ${webhook.txHash} on chain ${webhook.chainId}`,
       );
       const paymentCompletedNotification = await pushNotification(
         order.merchant_id,
         webhook.type,
         {
           message: 'Payment completed',
-          order_id: order.order_id,
+          order_id: orderId,
           display_currency: order.display_currency,
           display_amount: order.display_amount,
         },
@@ -374,21 +391,21 @@ async function handleWebhookType(
 
     case 'payment_bounced':
       console.log(
-        `Payment bounced for order ${order.order_id}: tx ${webhook.txHash} on chain ${webhook.chainId}`,
+        `Payment bounced for order ${orderId}: tx ${webhook.txHash} on chain ${webhook.chainId}`,
       );
       // Add any payment bounce specific logic here (e.g., notify customer)
       break;
 
     case 'payment_refunded': {
       console.log(
-        `Payment refunded for order ${order.order_id}: tx ${webhook.txHash} on chain ${webhook.chainId}`,
+        `Payment refunded for order ${orderId}: tx ${webhook.txHash} on chain ${webhook.chainId}`,
       );
       const paymentRefundNotification = await pushNotification(
         order.merchant_id,
         webhook.type,
         {
           message: 'Payment Refunded',
-          order_id: order.order_id,
+          order_id: orderId,
           display_currency: order.display_currency,
           display_amount: order.display_amount,
         },

@@ -81,7 +81,10 @@ async function updateCurrencyRates(
       updated.push(currencyId);
     } catch (error) {
       console.error(`Error updating ${currencyId}:`, error);
-      errors.push(`${currencyId}: ${error.message || 'Unknown error'}`);
+      const errorMessage = error instanceof Error
+        ? error.message
+        : 'Unknown error';
+      errors.push(`${currencyId}: ${errorMessage}`);
     }
   }
 
@@ -97,7 +100,7 @@ serve(async (req) => {
   // This enables the function to be invoked as a Cron job
   if (req.method === 'POST') {
     try {
-      const supabase = supabaseClient(req);
+      const supabase = supabaseClient();
 
       // Fetch the latest exchange rates
       const rates = await fetchExchangeRates();
@@ -128,7 +131,7 @@ serve(async (req) => {
         JSON.stringify({
           success: false,
           message: 'Failed to update currency rates',
-          error: error.message || 'Unknown error',
+          error: error instanceof Error ? error.message : 'Unknown error',
           timestamp: new Date().toISOString(),
         }),
         {

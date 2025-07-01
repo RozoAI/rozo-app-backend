@@ -5,7 +5,8 @@
 // Setup type definitions for built-in Supabase Runtime APIs
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
-import { extractBearerToken, verifyDynamicJWT } from './utils.ts';
+import { getDynamicIdFromJWT } from '../../_shared/utils.ts';
+import { extractBearerToken } from './utils.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,32 +14,6 @@ const corsHeaders = {
     'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
 };
-
-// Helper function to extract merchant_id from JWT
-async function getDynamicIdFromJWT(token: string, dynamicEnvId: string) {
-  const tokenVerification = await verifyDynamicJWT(token, dynamicEnvId);
-
-  if (!tokenVerification.success) {
-    return {
-      success: false,
-      error: tokenVerification.error,
-    };
-  }
-
-  // Extract merchant_id from JWT payload (assuming it's stored in 'sub' or custom claim)
-  const dynamicId = tokenVerification.payload.sub;
-  if (!dynamicId) {
-    return {
-      success: false,
-      error: 'Merchant ID not found in token',
-    };
-  }
-
-  return {
-    success: true,
-    dynamicId: dynamicId,
-  };
-}
 
 async function handleGetRequest(supabase: any, dynamicId: string) {
   try {

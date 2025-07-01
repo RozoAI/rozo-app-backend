@@ -15,4 +15,5 @@ jspm_packages
 
 # Supabase Edge Functions
 .supabase
-functions
+.branches
+.temp
