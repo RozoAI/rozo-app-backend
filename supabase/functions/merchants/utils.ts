@@ -1,5 +1,5 @@
-import jwt, { JwtPayload } from "npm:jsonwebtoken";
-import { JwksClient } from "npm:jwks-rsa";
+import jwt, { JwtPayload } from 'npm:jsonwebtoken';
+import { JwksClient } from 'npm:jwks-rsa';
 
 interface AuthResult {
   success: boolean;
@@ -27,7 +27,7 @@ interface DecodedJWT {
 function getEmbeddedWalletAddress(decodedJWT: DecodedJWT): string | null {
   const embeddedWallet = decodedJWT.verified_credentials?.find(
     (credential: VerifiedCredential) =>
-      credential.wallet_provider === "smartContractWallet",
+      credential.wallet_provider === 'smartContractWallet',
   );
 
   return embeddedWallet?.address || null;
@@ -65,12 +65,12 @@ export async function verifyDynamicJWT(
 
     // Check for additional auth requirements
     if (
-      decodedToken.scopes?.includes("requiresAdditionalAuth") &&
+      decodedToken.scopes?.includes('requiresAdditionalAuth') &&
       !allowAdditionalAuth
     ) {
       return {
         success: false,
-        error: "Additional verification required",
+        error: 'Additional verification required',
       };
     }
 
@@ -84,7 +84,7 @@ export async function verifyDynamicJWT(
       success: false,
       error: error instanceof Error
         ? error.message
-        : "Token verification failed",
+        : 'Token verification failed',
     };
   }
 }
@@ -97,8 +97,8 @@ export async function verifyDynamicJWT(
 export function extractBearerToken(authHeader: string | null): string | null {
   if (!authHeader) return null;
 
-  const parts = authHeader.split(" ");
-  if (parts.length !== 2 || parts[0] !== "Bearer") {
+  const parts = authHeader.split(' ');
+  if (parts.length !== 2 || parts[0] !== 'Bearer') {
     return null;
   }
 

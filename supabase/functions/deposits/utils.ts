@@ -1,5 +1,5 @@
-import { createDaimoPaymentLink } from "../../_shared/daimo-pay.ts";
-import { generateOrderNumber } from "../../_shared/utils.ts";
+import { createDaimoPaymentLink } from '../../_shared/daimo-pay.ts';
+import { generateOrderNumber } from '../../_shared/utils.ts';
 
 export interface CreateDepositRequest {
   display_amount: number;
@@ -30,7 +30,7 @@ export async function createDeposit(
   try {
     // First, verify if merchant exists and get token info
     const { data: merchant, error: merchantError } = await supabase
-      .from("merchants")
+      .from('merchants')
       .select(
         `
         merchant_id,
@@ -40,29 +40,29 @@ export async function createDeposit(
         logo_url
       `,
       )
-      .eq("dynamic_id", dynamicId)
+      .eq('dynamic_id', dynamicId)
       .single();
 
     if (merchantError || !merchant) {
       return {
         success: false,
-        error: "Merchant not found or has no default token configured",
+        error: 'Merchant not found or has no default token configured',
       };
     }
 
     // Skip currency conversion if currency is USD
     let required_amount_usd = depositData.display_amount;
-    if (depositData.display_currency !== "USD") {
+    if (depositData.display_currency !== 'USD') {
       const { data: currency, error } = await supabase
-        .from("currencies")
-        .select("usd_price")
-        .eq("currency_id", depositData.display_currency)
+        .from('currencies')
+        .select('usd_price')
+        .eq('currency_id', depositData.display_currency)
         .single();
 
       if (error || !currency) {
         return {
           success: false,
-          error: "Currency not found",
+          error: 'Currency not found',
         };
       }
       required_amount_usd = currency.usd_price * depositData.display_amount;
@@ -71,7 +71,7 @@ export async function createDeposit(
     if (required_amount_usd < 0.01) {
       return {
         success: false,
-        error: "Cannot create deposit with amount less than 0.01",
+        error: 'Cannot create deposit with amount less than 0.01',
       };
     }
 
@@ -80,7 +80,7 @@ export async function createDeposit(
 
     const paymentResponse = await createDaimoPaymentLink({
       merchant,
-      intent: "Deposit Payment",
+      intent: 'Deposit Payment',
       orderNumber: depositNumber,
       amountUnits: formattedUsdAmount.toString(),
       isOrder: false,
@@ -103,13 +103,13 @@ export async function createDeposit(
       merchant_address: merchant.wallet_address,
       required_amount_usd: formattedUsdAmount,
       required_token: merchant.tokens.token_address,
-      status: "PENDING",
+      status: 'PENDING',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
     const { data: deposit, error: depositError } = await supabase
-      .from("deposits")
+      .from('deposits')
       .insert(depositToInsert)
       .select()
       .single();
@@ -129,7 +129,7 @@ export async function createDeposit(
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
 }
@@ -142,8 +142,8 @@ export async function createDeposit(
 export function extractBearerToken(authHeader: string | null): string | null {
   if (!authHeader) return null;
 
-  const parts = authHeader.split(" ");
-  if (parts.length !== 2 || parts[0] !== "Bearer") {
+  const parts = authHeader.split(' ');
+  if (parts.length !== 2 || parts[0] !== 'Bearer') {
     return null;
   }
 

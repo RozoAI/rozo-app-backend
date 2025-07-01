@@ -1,14 +1,14 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { extractBearerToken, verifyDynamicJWT } from "./utils.ts";
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { extractBearerToken, verifyDynamicJWT } from './utils.ts';
 
-const DEFAULT_TOKEN_ID = "USDC_BASE";
+const DEFAULT_TOKEN_ID = 'USDC_BASE';
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, GET, PUT, OPTIONS",
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, GET, PUT, OPTIONS',
 };
 
 interface Merchant {
@@ -53,8 +53,8 @@ async function upsertMerchant(supabase: any, merchantData: Merchant) {
 
     cleanData.updated_at = new Date().toISOString();
     const { data, error } = await supabase
-      .from("merchants")
-      .upsert(cleanData, { onConflict: "dynamic_id", ignoreDuplicates: false })
+      .from('merchants')
+      .upsert(cleanData, { onConflict: 'dynamic_id', ignoreDuplicates: false })
       .select()
       .single();
 
@@ -63,7 +63,7 @@ async function upsertMerchant(supabase: any, merchantData: Merchant) {
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
 }
@@ -72,9 +72,9 @@ async function upsertMerchant(supabase: any, merchantData: Merchant) {
 async function handleGet(_request: Request, supabase: any, dynamicId: string) {
   try {
     const { data, error } = await supabase
-      .from("merchants")
-      .select("*")
-      .eq("dynamic_id", dynamicId)
+      .from('merchants')
+      .select('*')
+      .eq('dynamic_id', dynamicId)
       .single();
 
     if (error) {
@@ -102,7 +102,7 @@ async function handleGet(_request: Request, supabase: any, dynamicId: string) {
       {
         success: false,
         error: `Server error: ${
-          error instanceof Error ? error.message : "Unknown error"
+          error instanceof Error ? error.message : 'Unknown error'
         }`,
       },
       {
@@ -144,7 +144,7 @@ async function handlePost(
       {
         success: true,
         profile: result.data,
-        message: "Merchant Created/Updated successfully",
+        message: 'Merchant Created/Updated successfully',
       },
       {
         status: 200,
@@ -156,7 +156,7 @@ async function handlePost(
       {
         success: false,
         error: `Server error: ${
-          error instanceof Error ? error.message : "Unknown error"
+          error instanceof Error ? error.message : 'Unknown error'
         }`,
       },
       {
@@ -172,9 +172,9 @@ async function handlePut(request: Request, supabase: any, dynamicId: string) {
   try {
     // Get the current merchant data first
     const { data: existingMerchant, error: fetchError } = await supabase
-      .from("merchants")
-      .select("*")
-      .eq("dynamic_id", dynamicId)
+      .from('merchants')
+      .select('*')
+      .eq('dynamic_id', dynamicId)
       .single();
 
     if (fetchError) {
@@ -205,7 +205,7 @@ async function handlePut(request: Request, supabase: any, dynamicId: string) {
     if (logo) {
       try {
         // Extract file data from base64
-        const base64Data = logo.split(",")[1];
+        const base64Data = logo.split(',')[1];
 
         // Convert base64 to Uint8Array for upload
         const binaryData = Uint8Array.from(
@@ -214,7 +214,7 @@ async function handlePut(request: Request, supabase: any, dynamicId: string) {
         );
 
         // Generate a unique filename with png extension
-        const bucketName = Deno.env.get("STORAGE_BUCKET_NAME")!;
+        const bucketName = Deno.env.get('STORAGE_BUCKET_NAME')!;
         const fileName = `${existingMerchant.merchant_id}_${Date.now()}.png`;
         const filePath = `merchants/${fileName}`;
 
@@ -222,7 +222,7 @@ async function handlePut(request: Request, supabase: any, dynamicId: string) {
         const { error: uploadError } = await supabase.storage
           .from(bucketName)
           .upload(filePath, binaryData, {
-            contentType: "image/png",
+            contentType: 'image/png',
             upsert: true,
           });
 
@@ -244,7 +244,7 @@ async function handlePut(request: Request, supabase: any, dynamicId: string) {
             error: `${
               uploadError instanceof Error
                 ? uploadError.message
-                : "Unknown error"
+                : 'Unknown error'
             }`,
           },
           {
@@ -257,9 +257,9 @@ async function handlePut(request: Request, supabase: any, dynamicId: string) {
 
     // Update merchant record
     const { data: updatedMerchant, error: updateError } = await supabase
-      .from("merchants")
+      .from('merchants')
       .update(updateData)
-      .eq("dynamic_id", dynamicId)
+      .eq('dynamic_id', dynamicId)
       .select()
       .single();
 
@@ -277,7 +277,7 @@ async function handlePut(request: Request, supabase: any, dynamicId: string) {
       {
         success: true,
         profile: updatedMerchant,
-        message: "Merchant updated successfully",
+        message: 'Merchant updated successfully',
       },
       {
         status: 200,
@@ -289,7 +289,7 @@ async function handlePut(request: Request, supabase: any, dynamicId: string) {
       {
         success: false,
         error: `Server error: ${
-          error instanceof Error ? error.message : "Unknown error"
+          error instanceof Error ? error.message : 'Unknown error'
         }`,
       },
       {
@@ -302,17 +302,17 @@ async function handlePut(request: Request, supabase: any, dynamicId: string) {
 
 // Main serve function
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const DYNAMIC_ENV_ID = Deno.env.get("DYNAMIC_ENV_ID")!;
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const DYNAMIC_ENV_ID = Deno.env.get('DYNAMIC_ENV_ID')!;
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get(
-      "SUPABASE_SERVICE_ROLE_KEY",
+      'SUPABASE_SERVICE_ROLE_KEY',
     )!;
-    const STORAGE_BUCKET_NAME = Deno.env.get("STORAGE_BUCKET_NAME")!;
+    const STORAGE_BUCKET_NAME = Deno.env.get('STORAGE_BUCKET_NAME')!;
 
     if (
       !DYNAMIC_ENV_ID ||
@@ -321,7 +321,7 @@ serve(async (req) => {
       !STORAGE_BUCKET_NAME
     ) {
       return Response.json(
-        { error: "Missing environment variables" },
+        { error: 'Missing environment variables' },
         {
           status: 500,
           headers: corsHeaders,
@@ -329,15 +329,15 @@ serve(async (req) => {
       );
     }
 
-    const authHeader = req.headers.get("Authorization");
+    const authHeader = req.headers.get('Authorization');
     const token = extractBearerToken(authHeader);
 
     if (!token) {
       return new Response(
-        JSON.stringify({ error: "Missing or invalid authorization header" }),
+        JSON.stringify({ error: 'Missing or invalid authorization header' }),
         {
           status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         },
       );
     }
@@ -347,7 +347,7 @@ serve(async (req) => {
     if (!tokenVerification.success) {
       return Response.json(
         {
-          error: "Invalid or expired token",
+          error: 'Invalid or expired token',
           details: tokenVerification.error,
         },
         {
@@ -361,7 +361,7 @@ serve(async (req) => {
     if (!wallet_address) {
       return Response.json(
         {
-          error: "Missing embedded wallet address",
+          error: 'Missing embedded wallet address',
         },
         {
           status: 422,
@@ -372,16 +372,16 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     switch (req.method) {
-      case "GET":
+      case 'GET':
         return await handleGet(req, supabase, dynamicId);
-      case "POST":
+      case 'POST':
         return await handlePost(
           req,
           supabase,
           tokenVerification.payload,
           wallet_address,
         );
-      case "PUT":
+      case 'PUT':
         return await handlePut(req, supabase, dynamicId);
       default:
         return Response.json(
@@ -393,9 +393,9 @@ serve(async (req) => {
         );
     }
   } catch (error) {
-    console.error("Unhandled error:", error);
+    console.error('Unhandled error:', error);
     return Response.json(
-      { error: "Internal server error" },
+      { error: 'Internal server error' },
       {
         status: 500,
         headers: corsHeaders,

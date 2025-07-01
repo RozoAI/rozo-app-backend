@@ -1,4 +1,4 @@
-import Pusher from "npm:pusher";
+import Pusher from 'npm:pusher';
 
 /**
  * Simple function to trigger Pusher events
@@ -14,16 +14,16 @@ export async function pushNotification(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     // Basic env checks
-    const appId = Deno.env.get("PUSHER_APP_ID");
-    const key = Deno.env.get("PUSHER_KEY");
-    const secret = Deno.env.get("PUSHER_SECRET");
-    const cluster = Deno.env.get("PUSHER_CLUSTER");
+    const appId = Deno.env.get('PUSHER_APP_ID');
+    const key = Deno.env.get('PUSHER_KEY');
+    const secret = Deno.env.get('PUSHER_SECRET');
+    const cluster = Deno.env.get('PUSHER_CLUSTER');
 
     if (!appId || !key || !secret || !cluster) {
       return {
         success: false,
         error:
-          "Missing Pusher env vars: PUSHER_APP_ID, PUSHER_KEY, PUSHER_SECRET",
+          'Missing Pusher env vars: PUSHER_APP_ID, PUSHER_KEY, PUSHER_SECRET',
       };
     }
 
@@ -46,7 +46,7 @@ export async function pushNotification(
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
 }
