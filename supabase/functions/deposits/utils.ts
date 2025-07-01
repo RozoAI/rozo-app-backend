@@ -20,6 +20,7 @@ export interface Deposit {
   status: string;
   created_at: string;
   updated_at: string;
+  number: string;
 }
 
 export async function createDeposit(
@@ -106,6 +107,7 @@ export async function createDeposit(
       status: 'PENDING',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      number: depositNumber,
     };
 
     const { data: deposit, error: depositError } = await supabase

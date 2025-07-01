@@ -82,6 +82,10 @@ interface OrderRecord {
   number: string;
 }
 
+interface DepositRecord extends Omit<OrderRecord, 'deposit_id'> {
+  deposit_id: string;
+}
+
 serve(async (req: Request) => {
   // Only allow POST requests
   if (req.method !== 'POST') {
@@ -276,7 +280,7 @@ function mapWebhookTypeToStatus(webhookType: string): PaymentStatus {
  * Validates that the webhook payment details match the stored order
  */
 function validatePaymentDetails(
-  order: OrderRecord,
+  order: OrderRecord | DepositRecord,
   webhook: DaimoWebhookEvent,
 ): { isValid: boolean; errors: string[]; isOrder: boolean } {
   const errors: string[] = [];

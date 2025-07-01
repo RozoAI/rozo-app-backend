@@ -78,7 +78,7 @@ export async function createDaimoPaymentLink({
         intent: merchant?.display_name || intent,
         orgLogo: merchant?.logo_url || 'https://www.rozo.ai/rozo-logo.png',
         items: [
-          ...(isOrder ? [{ name: 'Order Number', description: orderNumber }] : []),
+          { name: isOrder ? 'Order Number' : 'Deposit Number', description: orderNumber },
           ...(description ? [{ name: 'Note', description }] : []),
         ],
         ...(redirect_uri ? { redirectUri: redirect_uri } : {}),
