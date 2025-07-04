@@ -87,10 +87,10 @@ export async function createDeposit(
       isOrder: false,
     });
 
-    if (!paymentResponse.success) {
+    if (!paymentResponse.success || !paymentResponse.paymentDetail) {
       return {
         success: false,
-        error: paymentResponse.error,
+        error: paymentResponse.error || 'Payment detail is missing',
       };
     }
 
