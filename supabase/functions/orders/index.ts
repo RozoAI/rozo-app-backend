@@ -88,10 +88,10 @@ async function createOrder(
       required_amount_usd = currency.usd_price * orderData.display_amount;
     }
 
-    if (required_amount_usd < 0.01) {
+    if (required_amount_usd < 0.1) {
       return {
         success: false,
-        error: 'Cannot create order with amount less than 0.01',
+        error: 'Cannot create order with amount less than 0.1',
       };
     }
 
@@ -99,18 +99,19 @@ async function createOrder(
     const orderNumber = generateOrderNumber();
 
     const paymentResponse = await createDaimoPaymentLink({
-      intent: INTENT_TITLE,
       merchant,
-      orderNumber,
+      intent: INTENT_TITLE,
+      orderNumber: orderNumber,
       amountUnits: formattedUsdAmount.toString(),
       description: orderData.description,
       redirect_uri: orderData.redirect_uri,
+      isOrder: true,
     });
 
-    if (!paymentResponse.success) {
+    if (!paymentResponse.success || !paymentResponse.paymentDetail) {
       return {
         success: false,
-        error: paymentResponse.error,
+        error: paymentResponse.error || 'Payment detail is missing',
       };
     }
     // Create the order with required_token from merchant's default token
@@ -199,10 +200,22 @@ async function handleGetSingleOrder(
       );
     }
 
+    const intentPayUrl = Deno.env.get('ROZO_PAY_URL');
+
+    if (!intentPayUrl) {
+      return Response.json(
+        { success: false, error: 'ROZO_PAY_URL is not set' },
+        { status: 500, headers: corsHeaders },
+      );
+    }
+
     return Response.json(
       {
         success: true,
-        order: order,
+        order: {
+          ...order,
+          qrcode: `${intentPayUrl}/${order.paymentDetail.id}`,
+        },
       },
       {
         status: 200,
@@ -413,9 +426,9 @@ async function handleCreateOrder(
 
     const result = await createOrder(supabase, dynamicId, orderData);
 
-    if (!result.success) {
+    if (!result.success || !result.paymentDetail) {
       return Response.json(
-        { success: false, error: result.error },
+        { success: false, error: result.error || 'Payment detail is missing' },
         {
           status: 400,
           headers: corsHeaders,
@@ -423,13 +436,23 @@ async function handleCreateOrder(
       );
     }
 
+    const intentPayUrl = Deno.env.get('ROZO_PAY_URL');
+
+    if (!intentPayUrl) {
+      return Response.json(
+        { success: false, error: 'ROZO_PAY_URL is not set' },
+        { status: 500, headers: corsHeaders },
+      );
+    }
+
     return Response.json(
       {
         success: true,
-        qrcode: result.paymentDetail.url,
+        qrcode: `${intentPayUrl}/${result.paymentDetail.id}`,
         order_id: result.order_id,
         order_number: result.order_number,
         message: 'Order created successfully',
+        result: result,
       },
       {
         status: 201,

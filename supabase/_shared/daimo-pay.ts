@@ -1,6 +1,29 @@
+interface DaimoPayment {
+  id: string;
+  status: string;
+  createdAt: string;
+  display: {
+    intent: string;
+    paymentValue: string;
+    currency: string;
+  };
+  source: any | null;
+  destination: {
+    destinationAddress: string;
+    txHash: string | null;
+    chainId: string;
+    amountUnits: string;
+    tokenSymbol: string;
+    tokenAddress: string;
+    callData: string;
+  };
+  externalId: string;
+  metadata: Record<string, any>;
+}
+
 interface DaimoPaymentResponse {
   success: boolean;
-  paymentDetail: any;
+  paymentDetail: DaimoPayment | null;
   error?: string;
 }
 
@@ -43,7 +66,7 @@ export async function createDaimoPaymentLink({
     if (!apiKey) {
       return {
         success: false,
-        paymentDetail: {},
+        paymentDetail: null,
         error: 'DAIMO_API_KEY environment variable is not set',
       };
     }
@@ -58,7 +81,7 @@ export async function createDaimoPaymentLink({
     ) {
       return {
         success: false,
-        paymentDetail: {},
+        paymentDetail: null,
         error: 'Missing required parameters for Creating paymentLink',
       };
     }
@@ -67,7 +90,7 @@ export async function createDaimoPaymentLink({
     if (isNaN(parseFloat(amountUnits)) || parseFloat(amountUnits) <= 0) {
       return {
         success: false,
-        paymentDetail: {},
+        paymentDetail: null,
         error: 'amountUnits must be a valid positive number',
       };
     }
@@ -111,21 +134,21 @@ export async function createDaimoPaymentLink({
       const errorText = await response.text();
       return {
         success: false,
-        paymentDetail: {},
+        paymentDetail: null,
         error: `Daimo API Error ${response.status}: ${errorText}`,
       };
     }
 
-    const paymentDetail = await response.json();
+    const paymentDetail = await response.json() as DaimoPayment;
 
     return {
       success: true,
-      paymentDetail: paymentDetail,
+      paymentDetail,
     };
   } catch (error) {
     return {
       success: false,
-      paymentDetail: {},
+      paymentDetail: null,
       error: error instanceof Error ? error.message : 'Unknown error occurred',
     };
   }

@@ -221,17 +221,26 @@ async function handleCreateDeposit(c: Context) {
 
     const result = await createDeposit(supabase, dynamicId, depositData);
 
-    if (!result.success) {
+    if (!result.success || !result.paymentDetail) {
       return c.json(
-        { success: false, error: result.error },
+        { success: false, error: result.error || 'Payment detail is missing' },
         400,
+      );
+    }
+
+    const intentPayUrl = Deno.env.get('ROZO_PAY_URL');
+
+    if (!intentPayUrl) {
+      return c.json(
+        { success: false, error: 'ROZO_PAY_URL is not set' },
+        500,
       );
     }
 
     return c.json(
       {
         success: true,
-        qrcode: result.paymentDetail.url,
+        qrcode: `${intentPayUrl}/${result.paymentDetail.id}`,
         deposit_id: result.deposit_id,
         message: 'Deposit created successfully',
       },
