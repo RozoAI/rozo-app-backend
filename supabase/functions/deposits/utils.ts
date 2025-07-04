@@ -69,10 +69,10 @@ export async function createDeposit(
       required_amount_usd = currency.usd_price * depositData.display_amount;
     }
 
-    if (required_amount_usd < 0.01) {
+    if (required_amount_usd < 0.1) {
       return {
         success: false,
-        error: 'Cannot create deposit with amount less than 0.01',
+        error: 'Cannot create deposit with amount less than 0.1',
       };
     }
 
