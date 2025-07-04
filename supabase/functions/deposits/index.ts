@@ -228,11 +228,11 @@ async function handleCreateDeposit(c: Context) {
       );
     }
 
-    const intentPayUrl = Deno.env.get('INTENT_PAY_URL');
+    const intentPayUrl = Deno.env.get('ROZO_PAY_URL');
 
     if (!intentPayUrl) {
       return c.json(
-        { success: false, error: 'INTENT_PAY_URL is not set' },
+        { success: false, error: 'ROZO_PAY_URL is not set' },
         500,
       );
     }

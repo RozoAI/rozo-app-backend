@@ -200,11 +200,11 @@ async function handleGetSingleOrder(
       );
     }
 
-    const intentPayUrl = Deno.env.get('INTENT_PAY_URL');
+    const intentPayUrl = Deno.env.get('ROZO_PAY_URL');
 
     if (!intentPayUrl) {
       return Response.json(
-        { success: false, error: 'INTENT_PAY_URL is not set' },
+        { success: false, error: 'ROZO_PAY_URL is not set' },
         { status: 500, headers: corsHeaders },
       );
     }
@@ -214,7 +214,7 @@ async function handleGetSingleOrder(
         success: true,
         order: {
           ...order,
-          qrcode: `${intentPayUrl}/${order.payment_id}`,
+          qrcode: `${intentPayUrl}/${order.paymentDetail.id}`,
         },
       },
       {
@@ -436,11 +436,11 @@ async function handleCreateOrder(
       );
     }
 
-    const intentPayUrl = Deno.env.get('INTENT_PAY_URL');
+    const intentPayUrl = Deno.env.get('ROZO_PAY_URL');
 
     if (!intentPayUrl) {
       return Response.json(
-        { success: false, error: 'INTENT_PAY_URL is not set' },
+        { success: false, error: 'ROZO_PAY_URL is not set' },
         { status: 500, headers: corsHeaders },
       );
     }
