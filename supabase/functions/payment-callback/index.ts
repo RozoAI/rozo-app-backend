@@ -153,11 +153,11 @@ serve(async (req: Request) => {
       return new Response('Test event skipped', { status: 200 });
     }
 
-    const isOrder = webhookEvent.payment.metadata?.isOrder === 'true';
-    const tableName = isOrder ? 'orders' : 'deposits';
+    // Force check based on payment_id
+    let existingOrder: OrderRecord | null = null;
+    let tableName = 'orders';
 
-    // Find the order by payment_id
-    const { data: existingOrder, error: fetchError } = await supabase
+    const { data: orderData, error: fetchError } = await supabase
       .from(tableName)
       .select('*')
       .eq('payment_id', webhookEvent.paymentId)
@@ -167,6 +167,26 @@ serve(async (req: Request) => {
       // PGRST116 = no rows returned
       console.error('Database error fetching order:', fetchError);
       return new Response('Database error', { status: 500 });
+    }
+
+    if (orderData) {
+      existingOrder = orderData as OrderRecord;
+    }
+
+    if (!existingOrder) {
+      const { data: existingDeposit, error: fetchErrorDeposit } = await supabase
+        .from('deposits')
+        .select('*')
+        .eq('payment_id', webhookEvent.paymentId)
+        .single();
+
+      if (fetchErrorDeposit && fetchErrorDeposit.code !== 'PGRST116') {
+        console.error('Database error fetching deposit:', fetchErrorDeposit);
+        return new Response('Database error', { status: 500 });
+      }
+
+      tableName = 'deposits';
+      existingOrder = existingDeposit as OrderRecord;
     }
 
     if (!existingOrder) {
@@ -230,9 +250,7 @@ serve(async (req: Request) => {
     }
 
     // For orders, use Partial<OrderRecord> typing; for deposits, use the base data
-    const updateData = isOrder
-      ? baseUpdateData as Partial<OrderRecord>
-      : baseUpdateData;
+    const updateData = baseUpdateData as Partial<OrderRecord>;
 
     const { error: updateError } = await supabase
       .from(tableName)
@@ -240,7 +258,7 @@ serve(async (req: Request) => {
       .eq('payment_id', webhookEvent.paymentId);
 
     if (updateError) {
-      const recordType = isOrder ? 'order' : 'deposit';
+      const recordType = tableName === 'orders' ? 'order' : 'deposit';
       console.error(`Error updating ${recordType}:`, updateError);
       return new Response(`Failed to update ${recordType}`, { status: 500 });
     }
