@@ -214,7 +214,7 @@ async function handleGetSingleOrder(
         success: true,
         order: {
           ...order,
-          qrcode: `${intentPayUrl}/${order.paymentDetail.id}`,
+          qrcode: `${intentPayUrl}${order.paymentDetail.id}`,
         },
       },
       {
@@ -448,7 +448,7 @@ async function handleCreateOrder(
     return Response.json(
       {
         success: true,
-        qrcode: `${intentPayUrl}/${result.paymentDetail.id}`,
+        qrcode: `${intentPayUrl}${result.paymentDetail.id}`,
         order_id: result.order_id,
         order_number: result.order_number,
         message: 'Order created successfully',

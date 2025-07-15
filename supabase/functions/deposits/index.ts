@@ -240,7 +240,7 @@ async function handleCreateDeposit(c: Context) {
     return c.json(
       {
         success: true,
-        qrcode: `${intentPayUrl}/${result.paymentDetail.id}`,
+        qrcode: `${intentPayUrl}${result.paymentDetail.id}`,
         deposit_id: result.deposit_id,
         message: 'Deposit created successfully',
       },
