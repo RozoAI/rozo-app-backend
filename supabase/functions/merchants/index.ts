@@ -72,6 +72,13 @@ interface PostPayload {
   wallet_address: string;
 }
 
+interface PostPayload {
+  dynamicId?: string | null;
+  privyId?: string | null;
+  email: string;
+  wallet_address: string;
+}
+
 // Upsert merchant function
 async function upsertMerchant(
   supabase: any,
@@ -186,6 +193,16 @@ async function handleGet(
     const { data, error } = isPrivyAuth
       ? await merchantQuery.eq("privy_id", userProviderId).single()
       : await merchantQuery.eq("dynamic_id", userProviderId).single();
+
+    if (!data) {
+      return Response.json(
+        { success: false, error: "Data not found" },
+        {
+          status: 404,
+          headers: corsHeaders,
+        },
+      );
+    }
 
     if (!data) {
       return Response.json(
@@ -689,7 +706,6 @@ serve(async (req) => {
 
     // Verify with Privy
     const privy = await verifyPrivyJWT(token, PRIVY_APP_ID, PRIVY_APP_SECRET);
-
     // const tokenVerification = await verifyAuthToken(authHeader);
     const tokenVerification = await verifyDynamicJWT(token, DYNAMIC_ENV_ID);
     if (!tokenVerification.success) {

@@ -85,13 +85,13 @@ async function handleGetAllDeposits(c: Context) {
     }
 
     // Validate status parameter
-    const validStatuses = ["pending", "completed", "failed", "discrepancy"];
+    const validStatuses = ["pending", "completed", "failed", "expired", "discrepancy"];
     if (statusParam && !validStatuses.includes(statusParam.toLowerCase())) {
       return c.json(
         {
           success: false,
           error:
-            "Status must be one of: pending, completed, failed, discrepancy",
+            "Status must be one of: pending, completed, failed, expired, discrepancy",
         },
         400,
       );

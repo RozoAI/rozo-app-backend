@@ -39,20 +39,34 @@ export async function createDeposit(
         dynamic_id,
         privy_id,
         wallet_address,
-        tokens!inner(chain_id, token_address),
+        default_token_id,
         logo_url
       `,
       );
 
     // Use appropriate column based on auth provider
-    const { data: merchant, error: merchantError } = isPrivyAuth
+    const { data: merchant, error: merchantError} = isPrivyAuth
       ? await merchantQuery.eq("privy_id", userProviderId).single()
       : await merchantQuery.eq("dynamic_id", userProviderId).single();
 
     if (merchantError || !merchant) {
       return {
         success: false,
-        error: "Merchant not found or has no default token configured",
+        error: "Merchant not found",
+      };
+    }
+
+    // Fetch default token
+    const { data: defaultToken, error: tokenError } = await supabase
+      .from("tokens")
+      .select("token_id, token_name, token_address, chain_id, chain_name")
+      .eq("token_id", merchant.default_token_id)
+      .single();
+
+    if (tokenError || !defaultToken) {
+      return {
+        success: false,
+        error: "Merchant's default token not found",
       };
     }
 
@@ -90,6 +104,8 @@ export async function createDeposit(
       orderNumber: depositNumber,
       amountUnits: formattedUsdAmount.toString(),
       redirect_uri: depositData.redirect_uri,
+      destinationToken: defaultToken,
+      preferredToken: defaultToken, // For deposits, both are the same (merchant's default)
       isOrder: false,
     });
 
@@ -106,10 +122,10 @@ export async function createDeposit(
       ...rest,
       merchant_id: merchant.merchant_id,
       payment_id: paymentResponse.paymentDetail.id,
-      merchant_chain_id: merchant.tokens.chain_id,
+      merchant_chain_id: defaultToken.chain_id,
       merchant_address: merchant.wallet_address,
       required_amount_usd: formattedUsdAmount,
-      required_token: merchant.tokens.token_address,
+      required_token: defaultToken.token_address,
       status: "PENDING",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
