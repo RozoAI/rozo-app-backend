@@ -22,5 +22,8 @@
   "deno.importMap": "./supabase/functions/import_map.json",
   "deno.enable": true,
   "editor.formatOnSave": true,
-  "typescript.tsserver.experimental.enableProjectDiagnostics": false
+  "typescript.tsserver.experimental.enableProjectDiagnostics": false,
+  "typescript.validate.enable": false,
+  "deno.path": "/Users/akbarsaputrait/.deno/bin/deno",
+  "prettier.singleQuote": false
 }

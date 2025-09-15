@@ -1,3 +1,5 @@
 {
-  "imports": {}
+  "imports": {
+    "@privy-io/server-auth": "npm:@privy-io/server-auth@^1.32.2"
+  }
 }
