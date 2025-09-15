@@ -1,0 +1,317 @@
+# Rozo Backend API - Cursor Rules
+
+## Project Overview
+
+This is a Supabase Edge Functions project for payment processing built with Deno/TypeScript. It implements a dual authentication system supporting both Dynamic and Privy wallet authentication providers.
+
+## Architecture Patterns
+
+### Authentication System
+
+- **Dual Provider Support**: All functions (except webhooks) support both Dynamic and Privy authentication
+- **Authentication Flow**:
+  1. Try Privy JWT verification first
+  2. Fallback to Dynamic JWT verification if Privy fails
+  3. Extract `userProviderId` from successful verification
+  4. Use `userProviderId` for all subsequent database operations
+
+### Database Patterns
+
+- **Merchant Identification**: Use OR logic for all merchant lookups
+  ```typescript
+  .or(`privy_id.eq.${userProviderId},dynamic_id.eq.${userProviderId}`)
+  ```
+- **Schema**: merchants table has both `dynamic_id` (nullable) and `privy_id` columns
+- **Migrations**: Located in `supabase/migrations/` with timestamps
+
+### Function Structure
+
+- **Standard Functions**: merchants, orders, withdrawals (use Deno serve)
+- **Hono Framework**: deposits function uses Hono for modern routing/middleware
+- **Webhook Function**: payment-callback (no authentication, webhook secret only)
+- **Cron Function**: update-currencies (scheduled currency rate updates)
+
+## Code Conventions
+
+### File Structure
+
+```
+supabase/
+├── _shared/                    # Shared utilities and middleware
+│   ├── daimo-pay.ts           # Daimo payment integration
+│   ├── dual-auth-middleware.ts # Dual auth middleware (Hono)
+│   ├── dynamic-middleware.ts  # Legacy Dynamic auth middleware
+│   └── utils.ts               # Common utility functions
+├── functions/
+│   ├── <function>/
+│   │   ├── index.ts   # Main entry point
+│   │   ├── utils.ts   # Function-specific utilities
+│   │   └── deno.json  # Deno configuration
+```
+
+### Import Patterns
+
+- Use double quotes for strings consistently
+- Group imports: external deps, then relative imports
+- Use `npm:` prefix for npm packages in Deno
+
+### Error Handling
+
+- Consistent error response structure:
+  ```typescript
+  Response.json(
+    { success: false, error: "Error message" },
+    { status: 400, headers: corsHeaders }
+  );
+  ```
+- Always include CORS headers in responses
+
+### Authentication Utils Pattern
+
+Each function should have these utilities:
+
+```typescript
+// In utils.ts
+export async function verifyDynamicJWT(
+  token: string,
+  dynamicEnvId: string
+): Promise<AuthResult>;
+export async function verifyPrivyJWT(
+  token: string,
+  appId: string,
+  appSecret: string
+);
+export function extractBearerToken(authHeader: string | null): string | null;
+```
+
+### Database Query Patterns
+
+- Always use parameterized queries
+- Use `.single()` for single record operations
+- Use `.select()` to specify needed columns
+- Apply proper error handling for database operations
+
+### CORS Configuration
+
+All functions must include:
+
+```typescript
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, GET, PUT, OPTIONS",
+};
+```
+
+## Function-Specific Patterns
+
+### Standard Functions (merchants, orders, withdrawals)
+
+```typescript
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  // Environment variables
+  const DYNAMIC_ENV_ID = Deno.env.get("DYNAMIC_ENV_ID")!;
+  const PRIVY_APP_ID = Deno.env.get("PRIVY_APP_ID")!;
+  const PRIVY_APP_SECRET = Deno.env.get("PRIVY_APP_SECRET")!;
+
+  // Token extraction and verification
+  const authHeader = req.headers.get("Authorization");
+  const token = extractBearerToken(authHeader);
+
+  // Dual authentication
+  const privy = await verifyPrivyJWT(token, PRIVY_APP_ID, PRIVY_APP_SECRET);
+  const tokenVerification = await verifyDynamicJWT(token, DYNAMIC_ENV_ID);
+
+  // Extract userProviderId
+  let userProviderId = null;
+  if (tokenVerification.success) {
+    userProviderId = tokenVerification.payload.sub;
+  }
+  if (privy.success) {
+    userProviderId = privy.payload?.id;
+  }
+
+  // Use userProviderId for all operations
+});
+```
+
+### Hono Functions (deposits)
+
+```typescript
+const app = new Hono().basePath(`/${functionName}`);
+
+// Configure CORS
+app.use(
+  "*",
+  cors({
+    /* config */
+  })
+);
+
+// Use dual auth middleware
+app.use(dualAuthMiddleware);
+
+// Routes
+app.post("/", handleCreate);
+app.get("/", handleGetAll);
+```
+
+### Middleware Pattern (Hono)
+
+- `dualAuthMiddleware` handles both Privy and Dynamic authentication
+- Try Privy first, fallback to Dynamic if Privy fails
+- Only fails when BOTH authentication providers fail
+- Sets context variables: `dynamicId` (userProviderId), `isPrivyAuth` (boolean), and `supabase`
+- Database queries use specific columns based on auth provider to avoid UUID format conflicts
+
+## Environment Variables
+
+### Required Variables
+
+```bash
+# Supabase
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# Authentication
+DYNAMIC_ENV_ID=
+PRIVY_APP_ID=
+PRIVY_APP_SECRET=
+
+# Payments
+DAIMO_*=
+ROZO_PAY_URL=
+
+# Notifications
+PUSHER_*=
+```
+
+## Development Workflow
+
+### Code Style
+
+- Always run `deno fmt` before committing
+- Use `deno lint` to check for issues
+- Follow TypeScript strict mode patterns
+- Use proper typing instead of `any`
+
+### Database Operations
+
+- Use transactions for multi-step operations
+- Always validate input data
+- Use proper SQL escaping through Supabase client
+- Handle both success and error cases
+
+### Testing
+
+- Test with both Dynamic and Privy tokens
+- Test error cases (invalid tokens, missing data)
+- Verify CORS headers in all responses
+- Test database OR logic with both ID types
+
+## Integration Patterns
+
+### Daimo Pay Integration
+
+```typescript
+const paymentResponse = await createDaimoPaymentLink({
+  merchant,
+  intent: "Order Payment",
+  orderNumber: orderNumber,
+  amountUnits: formattedUsdAmount.toString(),
+  // ... other config
+});
+```
+
+### Pusher Notifications
+
+```typescript
+const notification = await pushNotification(merchantId, eventType, payloadData);
+```
+
+### Currency Conversion
+
+```typescript
+// Skip conversion for USD
+let required_amount_usd = amount;
+if (currency !== "USD") {
+  const { data: currencyData } = await supabase
+    .from("currencies")
+    .select("usd_price")
+    .eq("currency_id", currency)
+    .single();
+  required_amount_usd = currencyData.usd_price * amount;
+}
+```
+
+## Security Patterns
+
+### JWT Verification
+
+- Always verify tokens before processing requests
+- Handle expired/invalid tokens gracefully
+- Extract user information from verified tokens
+- Never trust client-provided user IDs
+
+### Webhook Security
+
+- Verify webhook signatures
+- Use proper authentication headers
+- Validate payload structure
+- Prevent replay attacks
+
+### Database Security
+
+- Use service role key for database operations
+- Apply RLS policies where appropriate
+- Validate all input parameters
+- Use parameterized queries
+
+## Deployment Patterns
+
+### Local Development
+
+```bash
+npx supabase start
+npx supabase functions serve --env-file .env.local
+```
+
+### Production Deployment
+
+```bash
+npx supabase functions deploy [function-name]
+```
+
+### Environment Management
+
+- Use `.env.local` for local development
+- Set environment variables in Supabase dashboard for production
+- Never commit secrets to version control
+
+## Common Gotchas
+
+1. **Database Queries**: Use specific columns based on auth provider, not OR logic
+   - Privy user IDs are DIDs (e.g., `did:privy:cmffny10k00jjl80be2yqyg36`)
+   - Dynamic user IDs are different format
+   - Using DID in UUID column causes "invalid input syntax for type uuid" error
+2. **Authentication Provider Tracking**: Always track which provider succeeded (`isPrivyAuth`)
+3. **Column Selection**: Query `privy_id` for Privy auth, `dynamic_id` for Dynamic auth
+4. **CORS**: Include proper CORS headers in all responses
+5. **Error Handling**: Maintain consistent error response structure
+6. **Pagination**: Implement proper pagination for list endpoints
+7. **Status Validation**: Validate status transitions in webhook handlers
+8. **Currency Conversion**: Handle USD as special case (no conversion needed)
+
+## Best Practices
+
+1. **Consistency**: Follow established patterns across all functions
+2. **Error Handling**: Always provide meaningful error messages
+3. **Validation**: Validate all input data before processing
+4. **Logging**: Use console.log for debugging, console.error for errors
+5. **Performance**: Use proper indexing and efficient queries
+6. **Maintainability**: Keep functions focused and modular

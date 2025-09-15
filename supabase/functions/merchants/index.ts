@@ -37,10 +37,15 @@ interface PostPayload {
 }
 
 // Upsert merchant function
-async function upsertMerchant(supabase: any, merchantData: Merchant) {
+async function upsertMerchant(
+  supabase: any,
+  merchantData: Merchant,
+  isPrivyAuth: boolean,
+) {
   try {
     const cleanData: Partial<Merchant> = {
       dynamic_id: merchantData.dynamic_id,
+      privy_id: merchantData.privy_id,
     };
 
     cleanData.email = merchantData.email;
@@ -64,11 +69,37 @@ async function upsertMerchant(supabase: any, merchantData: Merchant) {
     }
 
     cleanData.updated_at = new Date().toISOString();
-    const { data, error } = await supabase
+
+    // Check if merchant exists based on appropriate auth provider
+    const userProviderId = merchantData.dynamic_id || merchantData.privy_id;
+    const merchantQuery = supabase
       .from("merchants")
-      .upsert(cleanData, { onConflict: "dynamic_id", ignoreDuplicates: false })
-      .select()
-      .single();
+      .select("merchant_id");
+
+    const { data: existingMerchant } = isPrivyAuth
+      ? await merchantQuery.eq("privy_id", userProviderId).single()
+      : await merchantQuery.eq("dynamic_id", userProviderId).single();
+
+    let data, error;
+    if (existingMerchant) {
+      // Update existing merchant
+      const updateQuery = supabase
+        .from("merchants")
+        .update(cleanData)
+        .select()
+        .single();
+
+      ({ data, error } = isPrivyAuth
+        ? await updateQuery.eq("privy_id", userProviderId)
+        : await updateQuery.eq("dynamic_id", userProviderId));
+    } else {
+      // Insert new merchant
+      ({ data, error } = await supabase
+        .from("merchants")
+        .insert(cleanData)
+        .select()
+        .single());
+    }
 
     if (error) throw new Error(error.message);
     return { success: true, data };
@@ -85,13 +116,17 @@ async function handleGet(
   _request: Request,
   supabase: any,
   userProviderId: string,
+  isPrivyAuth: boolean,
 ) {
   try {
-    const { data, error } = await supabase
+    const merchantQuery = supabase
       .from("merchants")
-      .select("*")
-      .or(`privy_id.eq.${userProviderId},dynamic_id.eq.${userProviderId}`)
-      .single();
+      .select("*");
+
+    // Use appropriate column based on auth provider
+    const { data, error } = isPrivyAuth
+      ? await merchantQuery.eq("privy_id", userProviderId).single()
+      : await merchantQuery.eq("dynamic_id", userProviderId).single();
 
     if (!data) {
       return Response.json(
@@ -144,6 +179,7 @@ async function handlePost(
   request: Request,
   supabase: any,
   payload: PostPayload,
+  isPrivyAuth: boolean,
 ) {
   try {
     const requestData: Merchant = await request.json();
@@ -154,7 +190,7 @@ async function handlePost(
     requestData.default_token_id = DEFAULT_TOKEN_ID;
 
     // Upsert merchant
-    const result = await upsertMerchant(supabase, requestData);
+    const result = await upsertMerchant(supabase, requestData, isPrivyAuth);
 
     if (!result.success) {
       return Response.json(
@@ -194,14 +230,22 @@ async function handlePost(
 }
 
 // PUT handler for updating merchant display_name and logo
-async function handlePut(request: Request, supabase: any, dynamicId: string) {
+async function handlePut(
+  request: Request,
+  supabase: any,
+  userProviderId: string,
+  isPrivyAuth: boolean,
+) {
   try {
     // Get the current merchant data first
-    const { data: existingMerchant, error: fetchError } = await supabase
+    const merchantQuery = supabase
       .from("merchants")
-      .select("*")
-      .eq("dynamic_id", dynamicId)
-      .single();
+      .select("*");
+
+    // Use appropriate column based on auth provider
+    const { data: existingMerchant, error: fetchError } = isPrivyAuth
+      ? await merchantQuery.eq("privy_id", userProviderId).single()
+      : await merchantQuery.eq("dynamic_id", userProviderId).single();
 
     if (fetchError) {
       return Response.json(
@@ -282,12 +326,15 @@ async function handlePut(request: Request, supabase: any, dynamicId: string) {
     }
 
     // Update merchant record
-    const { data: updatedMerchant, error: updateError } = await supabase
+    const updateQuery = supabase
       .from("merchants")
       .update(updateData)
-      .eq("dynamic_id", dynamicId)
       .select()
       .single();
+
+    const { data: updatedMerchant, error: updateError } = isPrivyAuth
+      ? await updateQuery.eq("privy_id", userProviderId)
+      : await updateQuery.eq("dynamic_id", userProviderId);
 
     if (updateError) {
       return Response.json(
@@ -362,8 +409,6 @@ serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     const token = extractBearerToken(authHeader);
 
-    console.log({ token, PRIVY_APP_ID, PRIVY_APP_SECRET });
-
     if (!token) {
       return new Response(
         JSON.stringify({ error: "Missing or invalid authorization header" }),
@@ -376,7 +421,7 @@ serve(async (req) => {
 
     // Verify with Privy
     const privy = await verifyPrivyJWT(token, PRIVY_APP_ID, PRIVY_APP_SECRET);
-    console.log({ privy });
+
     // const tokenVerification = await verifyAuthToken(authHeader);
     const tokenVerification = await verifyDynamicJWT(token, DYNAMIC_ENV_ID);
     if (!tokenVerification.success) {
@@ -396,6 +441,7 @@ serve(async (req) => {
 
     let userProviderId = null;
     let userProviderWalletAddress = null;
+    let isPrivyAuth = false;
 
     if (tokenVerification.success) {
       userProviderId = tokenVerification.payload.sub;
@@ -405,6 +451,7 @@ serve(async (req) => {
     if (privy.success) {
       userProviderId = privy.payload?.id;
       userProviderWalletAddress = privy.embedded_wallet_address;
+      isPrivyAuth = true;
     }
 
     if (!userProviderWalletAddress || !userProviderId) {
@@ -423,7 +470,7 @@ serve(async (req) => {
 
     switch (req.method) {
       case "GET":
-        return await handleGet(req, supabase, userProviderId);
+        return await handleGet(req, supabase, userProviderId, isPrivyAuth);
       case "POST":
         return await handlePost(
           req,
@@ -435,9 +482,10 @@ serve(async (req) => {
             dynamicId: tokenVerification.payload.sub,
             privyId: privy.payload?.id,
           },
+          isPrivyAuth,
         );
       case "PUT":
-        return await handlePut(req, supabase, userProviderId);
+        return await handlePut(req, supabase, userProviderId, isPrivyAuth);
       default:
         return Response.json(
           { error: `Method ${req.method} not allowed` },

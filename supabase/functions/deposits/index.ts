@@ -1,22 +1,26 @@
-import { Context, Hono } from 'jsr:@hono/hono';
-import { cors } from 'jsr:@hono/hono/cors';
-import { dynamicAuthMiddleware } from '../../_shared/dynamic-middleware.ts';
-import { createDeposit, CreateDepositRequest } from './utils.ts';
+import { Context, Hono } from "jsr:@hono/hono";
+import { cors } from "jsr:@hono/hono/cors";
+import { dualAuthMiddleware } from "../../_shared/dual-auth-middleware.ts";
+import { createDeposit, CreateDepositRequest } from "./utils.ts";
 
-const functionName = 'deposits';
+const functionName = "deposits";
 const app = new Hono().basePath(`/${functionName}`);
 
 // Business Logic
 async function handleGetAllDeposits(c: Context) {
   try {
-    const supabase = c.get('supabase');
-    const dynamicId = c.get('dynamicId');
+    const supabase = c.get("supabase");
+    const dynamicId = c.get("dynamicId");
+    const isPrivyAuth = c.get("isPrivyAuth");
 
-    const { data: merchant, error: merchantError } = await supabase
-      .from('merchants')
-      .select(`merchant_id`)
-      .eq('dynamic_id', dynamicId)
-      .single();
+    const merchantQuery = supabase
+      .from("merchants")
+      .select(`merchant_id`);
+
+    // Use appropriate column based on auth provider
+    const { data: merchant, error: merchantError } = isPrivyAuth
+      ? await merchantQuery.eq("privy_id", dynamicId).single()
+      : await merchantQuery.eq("dynamic_id", dynamicId).single();
 
     if (merchantError || !merchant) {
       return c.json(
@@ -27,9 +31,9 @@ async function handleGetAllDeposits(c: Context) {
 
     // Extract parameters from URL
     const url = new URL(c.req.url);
-    const limitParam = url.searchParams.get('limit');
-    const offsetParam = url.searchParams.get('offset');
-    const statusParam = url.searchParams.get('status');
+    const limitParam = url.searchParams.get("limit");
+    const offsetParam = url.searchParams.get("offset");
+    const statusParam = url.searchParams.get("status");
 
     // Parse and validate limit (default: 10, max: 20)
     let limit = 10; // default limit
@@ -37,7 +41,7 @@ async function handleGetAllDeposits(c: Context) {
       const parsedLimit = parseInt(limitParam, 10);
       if (isNaN(parsedLimit) || parsedLimit < 1) {
         return c.json(
-          { success: false, error: 'Limit must be a positive integer' },
+          { success: false, error: "Limit must be a positive integer" },
           400,
         );
       }
@@ -50,7 +54,7 @@ async function handleGetAllDeposits(c: Context) {
       const parsedOffset = parseInt(offsetParam, 10);
       if (isNaN(parsedOffset) || parsedOffset < 0) {
         return c.json(
-          { success: false, error: 'Offset must be a non-negative integer' },
+          { success: false, error: "Offset must be a non-negative integer" },
           400,
         );
       }
@@ -58,13 +62,13 @@ async function handleGetAllDeposits(c: Context) {
     }
 
     // Validate status parameter
-    const validStatuses = ['pending', 'completed', 'failed', 'discrepancy'];
+    const validStatuses = ["pending", "completed", "failed", "discrepancy"];
     if (statusParam && !validStatuses.includes(statusParam.toLowerCase())) {
       return c.json(
         {
           success: false,
           error:
-            'Status must be one of: pending, completed, failed, discrepancy',
+            "Status must be one of: pending, completed, failed, discrepancy",
         },
         400,
       );
@@ -75,26 +79,26 @@ async function handleGetAllDeposits(c: Context) {
       if (!statusParam) return query;
 
       const status = statusParam.toLowerCase();
-      return status === 'pending'
-        ? query.in('status', ['PENDING', 'PROCESSING'])
-        : query.eq('status', statusParam.toUpperCase());
+      return status === "pending"
+        ? query.in("status", ["PENDING", "PROCESSING"])
+        : query.eq("status", statusParam.toUpperCase());
     };
 
     // Get total count and paginated deposits in parallel
     const [countResult, depositsResult] = await Promise.all([
       applyStatusFilter(
         supabase
-          .from('deposits')
-          .select('*', { count: 'exact', head: true })
-          .eq('merchant_id', merchant.merchant_id),
+          .from("deposits")
+          .select("*", { count: "exact", head: true })
+          .eq("merchant_id", merchant.merchant_id),
       ),
       applyStatusFilter(
         supabase
-          .from('deposits')
-          .select('*')
-          .eq('merchant_id', merchant.merchant_id),
+          .from("deposits")
+          .select("*")
+          .eq("merchant_id", merchant.merchant_id),
       )
-        .order('created_at', { ascending: false })
+        .order("created_at", { ascending: false })
         .range(offset, offset + limit - 1),
     ]);
 
@@ -123,7 +127,7 @@ async function handleGetAllDeposits(c: Context) {
       {
         success: false,
         error: `Server error: ${
-          error instanceof Error ? error.message : 'Unknown error'
+          error instanceof Error ? error.message : "Unknown error"
         }`,
       },
       500,
@@ -136,14 +140,18 @@ async function handleGetSingleDeposit(
   depositId: string,
 ) {
   try {
-    const dynamicId = c.get('dynamicId');
-    const supabase = c.get('supabase');
+    const dynamicId = c.get("dynamicId");
+    const supabase = c.get("supabase");
+    const isPrivyAuth = c.get("isPrivyAuth");
 
-    const { data: merchant, error: merchantError } = await supabase
-      .from('merchants')
-      .select(`merchant_id`)
-      .eq('dynamic_id', dynamicId)
-      .single();
+    const merchantQuery = supabase
+      .from("merchants")
+      .select(`merchant_id`);
+
+    // Use appropriate column based on auth provider
+    const { data: merchant, error: merchantError } = isPrivyAuth
+      ? await merchantQuery.eq("privy_id", dynamicId).single()
+      : await merchantQuery.eq("dynamic_id", dynamicId).single();
 
     if (merchantError || !merchant) {
       return c.json(
@@ -153,10 +161,10 @@ async function handleGetSingleDeposit(
     }
 
     const { data: deposit, error } = await supabase
-      .from('deposits')
-      .select('*')
-      .eq('deposit_id', depositId)
-      .eq('merchant_id', merchant.merchant_id)
+      .from("deposits")
+      .select("*")
+      .eq("deposit_id", depositId)
+      .eq("merchant_id", merchant.merchant_id)
       .single();
 
     if (error) {
@@ -178,7 +186,7 @@ async function handleGetSingleDeposit(
       {
         success: false,
         error: `Server error: ${
-          error instanceof Error ? error.message : 'Unknown error'
+          error instanceof Error ? error.message : "Unknown error"
         }`,
       },
       500,
@@ -188,13 +196,14 @@ async function handleGetSingleDeposit(
 
 async function handleCreateDeposit(c: Context) {
   try {
-    const dynamicId = c.get('dynamicId');
-    const supabase = c.get('supabase');
+    const dynamicId = c.get("dynamicId");
+    const supabase = c.get("supabase");
+    const isPrivyAuth = c.get("isPrivyAuth");
 
     const depositData: CreateDepositRequest = await c.req.json();
 
     // Validate required fields
-    const requiredFields = ['display_currency', 'display_amount'];
+    const requiredFields = ["display_currency", "display_amount"];
 
     for (const field of requiredFields) {
       if (!depositData[field as keyof CreateDepositRequest]) {
@@ -207,32 +216,37 @@ async function handleCreateDeposit(c: Context) {
 
     // Validate numeric fields
     if (
-      typeof depositData.display_amount !== 'number' ||
+      typeof depositData.display_amount !== "number" ||
       depositData.display_amount <= 0
     ) {
       return c.json(
         {
           success: false,
-          error: 'display_amount must be a positive number',
+          error: "display_amount must be a positive number",
         },
         400,
       );
     }
 
-    const result = await createDeposit(supabase, dynamicId, depositData);
+    const result = await createDeposit(
+      supabase,
+      dynamicId,
+      isPrivyAuth,
+      depositData,
+    );
 
     if (!result.success || !result.paymentDetail) {
       return c.json(
-        { success: false, error: result.error || 'Payment detail is missing' },
+        { success: false, error: result.error || "Payment detail is missing" },
         400,
       );
     }
 
-    const intentPayUrl = Deno.env.get('ROZO_PAY_URL');
+    const intentPayUrl = Deno.env.get("ROZO_PAY_URL");
 
     if (!intentPayUrl) {
       return c.json(
-        { success: false, error: 'ROZO_PAY_URL is not set' },
+        { success: false, error: "ROZO_PAY_URL is not set" },
         500,
       );
     }
@@ -242,7 +256,7 @@ async function handleCreateDeposit(c: Context) {
         success: true,
         qrcode: `${intentPayUrl}${result.paymentDetail.id}`,
         deposit_id: result.deposit_id,
-        message: 'Deposit created successfully',
+        message: "Deposit created successfully",
       },
       201,
     );
@@ -251,7 +265,7 @@ async function handleCreateDeposit(c: Context) {
       {
         success: false,
         error: `Server error: ${
-          error instanceof Error ? error.message : 'Unknown error'
+          error instanceof Error ? error.message : "Unknown error"
         }`,
       },
       500,
@@ -261,25 +275,25 @@ async function handleCreateDeposit(c: Context) {
 
 // Configure CORS
 app.use(
-  '*',
+  "*",
   cors({
-    origin: '*',
-    allowHeaders: ['authorization', 'x-client-info', 'apikey', 'content-type'],
-    allowMethods: ['POST', 'GET', 'OPTIONS'],
+    origin: "*",
+    allowHeaders: ["authorization", "x-client-info", "apikey", "content-type"],
+    allowMethods: ["POST", "GET", "OPTIONS"],
   }),
 );
 
-app.options('*', (c) => c.text('ok'));
+app.options("*", (c) => c.text("ok"));
 
 // Set Middleware
-app.use(dynamicAuthMiddleware);
+app.use(dualAuthMiddleware);
 
 // Routes
-app.post('/', handleCreateDeposit);
-app.get('/', handleGetAllDeposits);
+app.post("/", handleCreateDeposit);
+app.get("/", handleGetAllDeposits);
 app.get(
-  '/:depositId',
-  (c) => handleGetSingleDeposit(c, c.req.param('depositId')),
+  "/:depositId",
+  (c) => handleGetSingleDeposit(c, c.req.param("depositId")),
 );
 
 Deno.serve(app.fetch);

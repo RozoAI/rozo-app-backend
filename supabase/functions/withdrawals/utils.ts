@@ -1,12 +1,38 @@
-import jwt, { JwtPayload } from 'npm:jsonwebtoken';
-import { JwksClient } from 'npm:jwks-rsa';
+import { PrivyClient } from "npm:@privy-io/server-auth";
+import jwt, { JwtPayload } from "npm:jsonwebtoken";
+import { JwksClient } from "npm:jwks-rsa";
 
 interface AuthResult {
   success: boolean;
   payload?: JwtPayload;
   error?: string;
+  embedded_wallet_address?: string | null;
 }
 
+interface VerifiedCredential {
+  address?: string;
+  wallet_provider: string;
+  chain?: string;
+  id: string;
+  public_identifier: string;
+  wallet_name?: string;
+  format: string;
+  signInEnabled: boolean;
+}
+
+interface DecodedJWT {
+  verified_credentials?: VerifiedCredential[];
+}
+
+// Get embedded wallet address from JWT and get the ZeroDev address
+function getEmbeddedWalletAddress(decodedJWT: DecodedJWT): string | null {
+  const embeddedWallet = decodedJWT.verified_credentials?.find(
+    (credential: VerifiedCredential) =>
+      credential.wallet_provider === "smartContractWallet",
+  );
+
+  return embeddedWallet?.address || null;
+}
 /**
  * Verify Dynamic JWT token
  * @param token - The JWT token to verify
@@ -40,25 +66,26 @@ export async function verifyDynamicJWT(
 
     // Check for additional auth requirements
     if (
-      decodedToken.scopes?.includes('requiresAdditionalAuth') &&
+      decodedToken.scopes?.includes("requiresAdditionalAuth") &&
       !allowAdditionalAuth
     ) {
       return {
         success: false,
-        error: 'Additional verification required',
+        error: "Additional verification required",
       };
     }
 
     return {
       success: true,
       payload: decodedToken,
+      embedded_wallet_address: getEmbeddedWalletAddress(decodedToken),
     };
   } catch (error) {
     return {
       success: false,
       error: error instanceof Error
         ? error.message
-        : 'Token verification failed',
+        : "Token verification failed",
     };
   }
 }
@@ -71,12 +98,48 @@ export async function verifyDynamicJWT(
 export function extractBearerToken(authHeader: string | null): string | null {
   if (!authHeader) return null;
 
-  const parts = authHeader.split(' ');
-  if (parts.length !== 2 || parts[0] !== 'Bearer') {
+  const parts = authHeader.split(" ");
+  if (parts.length !== 2 || parts[0] !== "Bearer") {
     return null;
   }
 
   return parts[1];
+}
+
+export async function verifyPrivyJWT(
+  token: string,
+  appId: string,
+  appSecret: string,
+) {
+  try {
+    const privy = new PrivyClient(
+      appId as string,
+      appSecret as string,
+    );
+    const verifiedClaims = await privy.verifyAuthToken(token);
+    if (verifiedClaims.appId === appId) {
+      const user = await privy.getUserById(verifiedClaims.userId);
+
+      return {
+        success: true,
+        payload: user,
+        embedded_wallet_address: user.wallet?.address || null,
+      };
+    }
+
+    return {
+      success: false,
+      error: "Invalid Token or App ID",
+    };
+  } catch (error) {
+    console.log("PRIVY ERROR:", error);
+    return {
+      success: false,
+      error: error instanceof Error
+        ? error.message
+        : "Token verification failed",
+    };
+  }
 }
 
 export type { AuthResult };
