@@ -333,7 +333,6 @@ Deno.serve(async (req) => {
 
     // Verify with Privy
     const privy = await verifyPrivyJWT(token, PRIVY_APP_ID, PRIVY_APP_SECRET);
-
     // const tokenVerification = await verifyAuthToken(authHeader);
     const tokenVerification = await verifyDynamicJWT(token, DYNAMIC_ENV_ID);
     if (!tokenVerification.success) {

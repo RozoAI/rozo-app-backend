@@ -27,6 +27,14 @@ interface DaimoPaymentResponse {
   error?: string;
 }
 
+interface TokenData {
+  token_id: string;
+  token_name: string;
+  token_address: string;
+  chain_id: string;
+  chain_name: string;
+}
+
 type CreateDaimoPaymentLinkProps = {
   intent: string,
   merchant: any,
@@ -34,14 +42,16 @@ type CreateDaimoPaymentLinkProps = {
   orderNumber: string,
   description?: string,
   redirect_uri?: string,
+  destinationToken: TokenData,
+  preferredToken: TokenData,
   isOrder?: boolean;
 }
 
 /**
  * @param intent - Purpose of the payment (e.g., "Pay Order", "Purchase", "Deposit")
- * @param destinationAddress - Recipient wallet address
- * @param destinationChainId - Destination chain ID (10=Optimism, 8453=Base, 137=Polygon, 42161=Arbitrum)
- * @param tokenAddress - Token contract address (use "0x0000000000000000000000000000000000000000" for native)
+ * @param merchant - Merchant object containing wallet_address
+ * @param destinationToken - Token configuration for destination (where payment goes)
+ * @param preferredToken - Token configuration for preferred payment method
  * @param amountUnits - Amount to receive as string (e.g., "1.00", "10.50")
  * @returns Payment link URL and payment ID
  */
@@ -52,13 +62,15 @@ export async function createDaimoPaymentLink({
   orderNumber,
   description,
   redirect_uri,
+  destinationToken,
+  preferredToken,
   isOrder = true
 }: CreateDaimoPaymentLinkProps): Promise<DaimoPaymentResponse> {
-  const { wallet_address, tokens } = merchant;
+  const { wallet_address } = merchant;
 
   const destinationAddress = wallet_address;
-  const destinationChainId = Number(tokens.chain_id);
-  const tokenAddress = tokens.token_address;
+  const destinationChainId = Number(destinationToken.chain_id);
+  const tokenAddress = destinationToken.token_address;
 
   try {
     // Get API key from environment variables
@@ -101,13 +113,13 @@ export async function createDaimoPaymentLink({
       display: {
         intent: intent || "Pay",
         paymentValue: String(parseFloat(amountUnits)),
-        currency: tokens?.currency || "USD",
+        currency: "USD",
       },
       destination: {
         destinationAddress,
         chainId: String(destinationChainId),
         amountUnits: String(parseFloat(amountUnits)),
-        tokenSymbol: "USDC",
+        tokenSymbol: destinationToken.token_name,
         tokenAddress: tokenAddress,
       },
       externalId: orderNumber || "",
@@ -123,8 +135,9 @@ export async function createDaimoPaymentLink({
         merchantToken: wallet_address || "",
         callbackUrl: "https://iufqieirueyalyxfzszh.supabase.co/functions/v1/payment-callback"
       },
-      preferredChain: tokens?.preferred_chain || String(destinationChainId),
-      preferredToken: "USDC",
+      preferredChain: preferredToken.chain_id,
+      preferredToken: preferredToken.token_name,
+      preferredTokenAddress: preferredToken.token_address,
       callbackUrl: "https://iufqieirueyalyxfzszh.supabase.co/functions/v1/payment-callback"
     };
 
@@ -149,7 +162,6 @@ export async function createDaimoPaymentLink({
     }
 
     const paymentDetail = await response.json() as DaimoPayment;
-    console.log({paymentDetail});
     return {
       success: true,
       paymentDetail,

@@ -8,6 +8,7 @@ enum PaymentStatus {
   PROCESSING = "PROCESSING",
   COMPLETED = "COMPLETED",
   FAILED = "FAILED",
+  EXPIRED = "EXPIRED",
   DISCREPANCY = "DISCREPANCY",
 }
 
@@ -17,6 +18,7 @@ const STATUS_HIERARCHY = {
   [PaymentStatus.PROCESSING]: 1,
   [PaymentStatus.COMPLETED]: 2,
   [PaymentStatus.FAILED]: 2,
+  [PaymentStatus.EXPIRED]: 2,
   [PaymentStatus.DISCREPANCY]: 2,
 };
 
