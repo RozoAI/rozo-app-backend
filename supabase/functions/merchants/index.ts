@@ -30,8 +30,8 @@ interface Merchant {
 }
 
 interface PostPayload {
-  dynamicId?: string;
-  privyId?: string;
+  dynamicId?: string | null;
+  privyId?: string | null;
   email: string;
   wallet_address: string;
 }
@@ -176,18 +176,23 @@ async function handleGet(
 
 // POST handler with upsert
 async function handlePost(
-  request: Request,
+  body: any,
   supabase: any,
   payload: PostPayload,
   isPrivyAuth: boolean,
 ) {
   try {
-    const requestData: Merchant = await request.json();
+    const requestData: Merchant = body;
     requestData.wallet_address = payload.wallet_address;
-    requestData.dynamic_id = payload.dynamicId;
-    requestData.privy_id = payload.privyId;
     requestData.email = payload.email;
     requestData.default_token_id = DEFAULT_TOKEN_ID;
+
+    if (payload.dynamicId) {
+      requestData.dynamic_id = payload.dynamicId;
+    }
+    if (payload.privyId) {
+      requestData.privy_id = payload.privyId;
+    }
 
     // Upsert merchant
     const result = await upsertMerchant(supabase, requestData, isPrivyAuth);
@@ -471,19 +476,31 @@ serve(async (req) => {
     switch (req.method) {
       case "GET":
         return await handleGet(req, supabase, userProviderId, isPrivyAuth);
-      case "POST":
+      case "POST": {
+        let requestBody;
+        if (req.headers.get("content-type")?.includes("application/json")) {
+          requestBody = await req.json();
+        } else if (req.headers.get("content-type")?.includes("text/plain")) {
+          requestBody = await req.text();
+        } else {
+          // Handle other content types or assume no body
+          requestBody = {};
+        }
+
+        const email = requestBody.email ?? tokenVerification.payload.email ??
+          privy.payload?.email?.address;
         return await handlePost(
-          req,
+          requestBody,
           supabase,
           {
-            email: tokenVerification.payload.email ??
-              privy.payload?.email?.address,
+            email: email,
             wallet_address: userProviderWalletAddress,
-            dynamicId: tokenVerification.payload.sub,
-            privyId: privy.payload?.id,
+            dynamicId: tokenVerification.payload?.sub || null,
+            privyId: privy.payload?.id || null,
           },
           isPrivyAuth,
         );
+      }
       case "PUT":
         return await handlePut(req, supabase, userProviderId, isPrivyAuth);
       default:

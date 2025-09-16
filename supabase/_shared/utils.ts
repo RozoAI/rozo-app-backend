@@ -1,4 +1,3 @@
-import { PrivyClient } from "npm:@privy-io/server-auth";
 import jwt, { JwtPayload } from 'npm:jsonwebtoken';
 import { JwksClient } from 'npm:jwks-rsa';
 
@@ -129,24 +128,6 @@ export function generateOrderNumber(): string {
     .padStart(8, '0');
 
   return `${datePart}${randomPart}`;
-}
-
-export async function verifyPrivyJWT(token: string, appId: string, appSecret: string) {
-  try {
-    const privy = new PrivyClient(
-      appId as string,
-      appSecret as string
-    );
-    const verifiedClaims = await privy.verifyAuthToken(token);
-    console.log({ verifiedClaims })
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error
-        ? error.message
-        : 'Token verification failed',
-    };
-  }
 }
 
 export type { AuthResult };

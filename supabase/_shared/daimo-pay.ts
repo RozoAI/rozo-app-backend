@@ -97,35 +97,41 @@ export async function createDaimoPaymentLink({
 
     // Construct payment request
     const paymentRequest = {
+      appId: "rozoApp",
       display: {
-        intent: merchant?.display_name || intent,
-        orgLogo: merchant?.logo_url || 'https://www.rozo.ai/rozo-logo.png',
-        items: [
-          { name: isOrder ? 'Order Number' : 'Deposit Number', description: orderNumber },
-          ...(description ? [{ name: 'Note', description }] : []),
-        ],
-        ...(redirect_uri ? { redirectUri: redirect_uri } : {}),
+        intent: intent || "Pay",
+        paymentValue: String(parseFloat(amountUnits)),
+        currency: tokens?.currency || "USD",
       },
       destination: {
         destinationAddress,
-        tokenAddress,
-        amountUnits: String(parseFloat(amountUnits).toFixed(2)),
-        chainId: destinationChainId,
-        calldata: '0x',
+        chainId: String(destinationChainId),
+        amountUnits: String(parseFloat(amountUnits)),
+        tokenSymbol: "USDC",
+        tokenAddress: tokenAddress,
       },
-      externalId: orderNumber,
+      externalId: orderNumber || "",
       metadata: {
-        merchantId: merchant?.merchant_id,
-        isOrder: `${isOrder}`
+        daimoOrderId: orderNumber || "",
+        intent: intent || "Pay",
+        items: [
+          { name: isOrder ? "Order Number" : "Deposit Number", description: orderNumber },
+          ...(description ? [{ name: "Note", description }] : []),
+        ],
+        payer: {},
+        orderDate: new Date().toISOString(),
       },
+      preferredChain: tokens?.preferred_chain || String(destinationChainId),
+      preferredToken: "USDC",
     };
 
     // Make API request to Daimo Pay
-    const response = await fetch('https://pay.daimo.com/api/payment', {
+    // const response = await fetch('https://pay.daimo.com/api/payment', {
+    const response = await fetch('https://intentapiv2.rozo.ai/functions/v1/payment-api', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Api-Key': apiKey,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(paymentRequest),
     });
