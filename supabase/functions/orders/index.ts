@@ -224,7 +224,7 @@ async function handleGetSingleOrder(
         success: true,
         order: {
           ...order,
-          qrcode: `${intentPayUrl}${order.paymentDetail.id}`,
+          qrcode: `${intentPayUrl}${order.payment_id}`,
         },
       },
       {

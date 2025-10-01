@@ -120,9 +120,12 @@ export async function createDaimoPaymentLink({
         ],
         payer: {},
         orderDate: new Date().toISOString(),
+        merchantToken: wallet_address || "",
+        callbackUrl: "https://33856c2619ed.ngrok-free.app/functions/v1/payment-callback"
       },
       preferredChain: tokens?.preferred_chain || String(destinationChainId),
       preferredToken: "USDC",
+      callbackUrl: "https://33856c2619ed.ngrok-free.app/functions/v1/payment-callback"
     };
 
     // Make API request to Daimo Pay
@@ -146,7 +149,7 @@ export async function createDaimoPaymentLink({
     }
 
     const paymentDetail = await response.json() as DaimoPayment;
-
+    console.log({paymentDetail});
     return {
       success: true,
       paymentDetail,
