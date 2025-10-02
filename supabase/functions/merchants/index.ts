@@ -70,19 +70,41 @@ async function upsertMerchant(
 
     cleanData.updated_at = new Date().toISOString();
 
-    // Check if merchant exists based on appropriate auth provider
-    const userProviderId = merchantData.dynamic_id || merchantData.privy_id;
-    const merchantQuery = supabase
+    // First check if merchant exists by email (to handle cross-provider scenarios)
+    const { data: existingByEmail } = await supabase
       .from("merchants")
-      .select("merchant_id");
+      .select("merchant_id, privy_id, dynamic_id")
+      .eq("email", merchantData.email)
+      .single();
 
-    const { data: existingMerchant } = isPrivyAuth
-      ? await merchantQuery.eq("privy_id", userProviderId).single()
-      : await merchantQuery.eq("dynamic_id", userProviderId).single();
+    // Then check if merchant exists based on appropriate auth provider
+    const userProviderId = merchantData.dynamic_id || merchantData.privy_id;
+    const { data: existingByProvider } = isPrivyAuth
+      ? await supabase
+        .from("merchants")
+        .select("merchant_id, privy_id, dynamic_id")
+        .eq("privy_id", userProviderId)
+        .single()
+      : await supabase
+        .from("merchants")
+        .select("merchant_id, dynamic_id, privy_id")
+        .eq("dynamic_id", userProviderId)
+        .single();
 
     let data, error;
-    if (existingMerchant) {
-      // Update existing merchant
+
+    // If merchant exists by email but not by provider, update the existing record
+    if (existingByEmail && !existingByProvider) {
+      // Update existing merchant with new provider info
+      const updateQuery = supabase
+        .from("merchants")
+        .update(cleanData)
+        .select()
+        .single();
+
+      ({ data, error } = await updateQuery.eq("email", merchantData.email));
+    } else if (existingByProvider) {
+      // Update existing merchant by provider
       const updateQuery = supabase
         .from("merchants")
         .update(cleanData)

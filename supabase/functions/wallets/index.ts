@@ -1,25 +1,13 @@
 import { Context, Hono } from "@hono/hono";
 import { cors } from "@hono/hono/cors";
-import { Chacha20Poly1305 } from "@hpke/chacha20poly1305";
-import { CipherSuite, DhkemP256HkdfSha256, HkdfSha256 } from "@hpke/core";
 import { PrivyClient } from "@privy-io/node";
 import { Buffer } from "node:buffer";
-import { webcrypto as crypto } from "node:crypto";
 import { encodeFunctionData, erc20Abi } from "viem";
 import { dualAuthMiddleware } from "../../_shared/dual-auth-middleware.ts";
 import { extractBearerToken } from "../../_shared/utils.ts";
 
 const functionName = "wallets";
 const app = new Hono().basePath(`/${functionName}`);
-const { subtle } = crypto;
-
-// --- TYPE DEFINITIONS ---
-interface AuthResponse {
-  encrypted_authorization_key?: {
-    encapsulated_key: string;
-    ciphertext: string;
-  };
-}
 
 interface WalletResponse {
   id: string;
@@ -46,6 +34,7 @@ interface TransactionConfig {
 interface TransactionRequest {
   recipientAddress: string;
   amount: number;
+  signature: string;
 }
 
 interface TransactionResult {
@@ -89,79 +78,6 @@ function debugSuccess(step: string, data?: unknown): void {
 function generateBasicAuthHeader(username: string, password: string): string {
   const token = Buffer.from(`${username}:${password}`).toString("base64");
   return `Basic ${token}`;
-}
-
-/** Converts an ArrayBuffer to a Uint8Array. */
-function abToBytes(ab: ArrayBuffer): Uint8Array {
-  return new Uint8Array(ab);
-}
-
-/** Converts a Uint8Array to a Base64 encoded string. */
-function bytesToB64(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString("base64");
-}
-
-/** Converts a Base64 encoded string to a Uint8Array. */
-function b64ToBytes(b64: string): Uint8Array {
-  return Uint8Array.from(Buffer.from(b64, "base64"));
-}
-
-/** Creates a Basic Authentication header value. */
-function basicAuth(id: string, secret: string): string {
-  return Buffer.from(`${id}:${secret}`).toString("base64");
-}
-
-/** Generates an ECDH P-256 keypair for HPKE. */
-async function generateP256ECDH(): Promise<{
-  spki: Uint8Array;
-  pkcs8: Uint8Array;
-}> {
-  const keyPair = await subtle.generateKey(
-    { name: "ECDH", namedCurve: "P-256" },
-    true,
-    ["deriveBits"],
-  );
-
-  const spkiAb = await subtle.exportKey("spki", keyPair.publicKey);
-  const pkcs8Ab = await subtle.exportKey("pkcs8", keyPair.privateKey);
-
-  return { spki: abToBytes(spkiAb), pkcs8: abToBytes(pkcs8Ab) };
-}
-
-/** Decrypts the authorization key from Privy using HPKE. */
-async function decryptAuthorizationKey(
-  pkcs8B64: string,
-  encB64: string,
-  ctB64: string,
-): Promise<string> {
-  const suite = new CipherSuite({
-    kem: new DhkemP256HkdfSha256(),
-    kdf: new HkdfSha256(),
-    aead: new Chacha20Poly1305(),
-  });
-
-  const privateKey = await subtle.importKey(
-    "pkcs8",
-    b64ToBytes(pkcs8B64),
-    { name: "ECDH", namedCurve: "P-256" },
-    true,
-    ["deriveBits"],
-  );
-
-  const recipient = await suite.createRecipientContext({
-    recipientKey: privateKey,
-    enc: b64ToBytes(encB64).buffer as ArrayBuffer,
-  });
-
-  const plaintextAb = await recipient.open(
-    b64ToBytes(ctB64).buffer as ArrayBuffer,
-  );
-
-  // The decrypted plaintext is the base64 representation of the DER-encoded key
-  const base64DerKey = Buffer.from(plaintextAb).toString("utf8");
-
-  // Format the base64 DER key into a standard PEM format
-  return base64DerKey;
 }
 
 async function checkIfWalletHasOwner(
@@ -215,6 +131,12 @@ function validateTransactionRequestBody(body: unknown): TransactionRequest {
   const request = body as Record<string, unknown>;
 
   if (
+    !request.signature || typeof request.signature !== "string"
+  ) {
+    throw new Error("signature is required and must be a string");
+  }
+
+  if (
     !request.recipientAddress || typeof request.recipientAddress !== "string"
   ) {
     throw new Error("recipientAddress is required and must be a string");
@@ -234,6 +156,7 @@ function validateTransactionRequestBody(body: unknown): TransactionRequest {
   const validatedRequest: TransactionRequest = {
     recipientAddress: request.recipientAddress,
     amount: request.amount,
+    signature: request.signature,
   };
 
   debugSuccess("Transaction request body validated", validatedRequest);
@@ -412,19 +335,19 @@ async function handleTransactions(c: Context, walletId: string) {
     });
 
     // Step 4: Sign message for wallet authorization
-    const signature = await signMessageForWallet(
-      privy,
-      walletId,
-      token,
-      transactionConfig,
-    );
+    // const signature = await signMessageForWallet(
+    //   privy,
+    //   walletId,
+    //   token,
+    //   transactionConfig,
+    // );
 
     // Step 5: Update wallet with policy
     await updateWalletWithPolicy(
       privy,
       walletId,
       token,
-      signature,
+      transactionRequest.signature,
       walletOwner.owner_id,
       transactionConfig.policyId,
     );
@@ -437,7 +360,7 @@ async function handleTransactions(c: Context, walletId: string) {
       privy,
       walletId,
       token,
-      signature,
+      transactionRequest.signature,
       transactionConfig,
       encodedData,
     );
