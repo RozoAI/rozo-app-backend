@@ -49,6 +49,7 @@ async function upsertMerchant(
     };
 
     cleanData.email = merchantData.email;
+    cleanData.display_name = merchantData.email;
     cleanData.default_token_id = merchantData.default_token_id;
     if (merchantData.display_name) {
       cleanData.display_name = merchantData.display_name;
