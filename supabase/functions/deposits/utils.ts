@@ -89,6 +89,7 @@ export async function createDeposit(
       intent: "Deposit Payment",
       orderNumber: depositNumber,
       amountUnits: formattedUsdAmount.toString(),
+      redirect_uri: depositData.redirect_uri,
       isOrder: false,
     });
 

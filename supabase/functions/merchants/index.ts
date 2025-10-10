@@ -287,12 +287,16 @@ async function handlePut(
 
     // Parse the request body
     const requestData = await request.json();
-    const { display_name, logo } = requestData;
+    const { display_name, logo, email } = requestData;
 
     // Prepare update data
     const updateData: Partial<Merchant> = {
       updated_at: new Date().toISOString(),
     };
+
+    if (email) {
+      updateData.email = email;
+    }
 
     // Update display_name if provided
     if (display_name) {

@@ -35,6 +35,7 @@ interface TransactionRequest {
   recipientAddress: string;
   amount: number;
   signature: string;
+  requestId?: string; // Optional request ID for idempotency
 }
 
 interface TransactionResult {
@@ -57,6 +58,16 @@ const DEFAULT_TRANSACTION_CONFIG: Omit<
   ) as string,
 };
 
+// In-memory cache for tracking recent transactions (prevents duplicates)
+const transactionCache = new Map<string, {
+  result: TransactionResult;
+  timestamp: number;
+  walletId: string;
+}>();
+
+// Cache TTL: 5 minutes
+const CACHE_TTL = 5 * 60 * 1000;
+
 // --- DEBUGGING UTILITIES ---
 function debugLog(step: string, data?: unknown): void {
   console.log(`🔍 [DEBUG] ${step}`, data ? JSON.stringify(data, null, 2) : "");
@@ -78,6 +89,89 @@ function debugSuccess(step: string, data?: unknown): void {
 function generateBasicAuthHeader(username: string, password: string): string {
   const token = Buffer.from(`${username}:${password}`).toString("base64");
   return `Basic ${token}`;
+}
+
+// Generate a unique cache key for the transaction
+function generateCacheKey(
+  walletId: string,
+  recipientAddress: string,
+  amount: number,
+  signature: string,
+  requestId?: string,
+): string {
+  // Use requestId if provided, otherwise create a hash from transaction details
+  if (requestId) {
+    return `req:${requestId}`;
+  }
+
+  // Create a deterministic hash from transaction details
+  const transactionData =
+    `${walletId}:${recipientAddress}:${amount}:${signature}`;
+  return `txn:${Buffer.from(transactionData).toString("base64")}`;
+}
+
+// Check if this transaction was already processed recently
+function checkDuplicateTransaction(
+  cacheKey: string,
+  walletId: string,
+): TransactionResult | null {
+  const cached = transactionCache.get(cacheKey);
+
+  if (!cached) {
+    return null;
+  }
+
+  // Check if cache entry is still valid and for the same wallet
+  const now = Date.now();
+  if (now - cached.timestamp > CACHE_TTL || cached.walletId !== walletId) {
+    transactionCache.delete(cacheKey);
+    return null;
+  }
+
+  debugLog("Found duplicate transaction in cache", {
+    cacheKey,
+    walletId,
+    cachedResult: cached.result,
+    age: now - cached.timestamp,
+  });
+
+  return cached.result;
+}
+
+// Store transaction result in cache
+function cacheTransactionResult(
+  cacheKey: string,
+  walletId: string,
+  result: TransactionResult,
+): void {
+  transactionCache.set(cacheKey, {
+    result,
+    timestamp: Date.now(),
+    walletId,
+  });
+
+  debugLog("Cached transaction result", {
+    cacheKey,
+    walletId,
+    result,
+  });
+}
+
+// Clean up expired cache entries
+function cleanupExpiredCache(): void {
+  const now = Date.now();
+  let cleanedCount = 0;
+
+  for (const [key, value] of transactionCache.entries()) {
+    if (now - value.timestamp > CACHE_TTL) {
+      transactionCache.delete(key);
+      cleanedCount++;
+    }
+  }
+
+  if (cleanedCount > 0) {
+    debugLog("Cleaned up expired cache entries", { cleanedCount });
+  }
 }
 
 async function checkIfWalletHasOwner(
@@ -157,6 +251,7 @@ function validateTransactionRequestBody(body: unknown): TransactionRequest {
     recipientAddress: request.recipientAddress,
     amount: request.amount,
     signature: request.signature,
+    requestId: request.requestId as string | undefined,
   };
 
   debugSuccess("Transaction request body validated", validatedRequest);
@@ -202,7 +297,7 @@ async function validateTransactionRequest(
   return { token, walletOwner };
 }
 
-async function signMessageForWallet(
+async function _signMessageForWallet(
   privy: PrivyClient,
   walletId: string,
   token: string,
@@ -313,19 +408,47 @@ async function handleTransactions(c: Context, walletId: string) {
   debugLog("Starting transaction process", { walletId });
 
   try {
+    // Clean up expired cache entries periodically
+    cleanupExpiredCache();
+
     // Step 1: Parse and validate request body
     const requestBody = await c.req.json();
     const transactionRequest = validateTransactionRequestBody(requestBody);
     const transactionConfig = createTransactionConfig(transactionRequest);
 
-    // Step 2: Validate request and get wallet owner
+    // Step 2: Check for duplicate transaction
+    const cacheKey = generateCacheKey(
+      walletId,
+      transactionRequest.recipientAddress,
+      transactionRequest.amount,
+      transactionRequest.signature,
+      transactionRequest.requestId,
+    );
+
+    const duplicateResult = checkDuplicateTransaction(cacheKey, walletId);
+    if (duplicateResult) {
+      debugLog("Returning cached transaction result", {
+        cacheKey,
+        duplicateResult,
+      });
+      return c.json({
+        success: true,
+        transaction: duplicateResult,
+        walletId: walletId,
+        recipientAddress: transactionConfig.recipientAddress,
+        amount: transactionConfig.amountToSend,
+        cached: true, // Indicate this is a cached result
+      });
+    }
+
+    // Step 3: Validate request and get wallet owner
     const authHeader = c.req.header("Authorization");
     const { token, walletOwner } = await validateTransactionRequest(
       authHeader ?? null,
       walletId,
     );
 
-    // Step 3: Initialize Privy client
+    // Step 4: Initialize Privy client
     const PRIVY_APP_ID = Deno.env.get("PRIVY_APP_ID")!;
     const PRIVY_APP_SECRET = Deno.env.get("PRIVY_APP_SECRET")!;
 
@@ -334,15 +457,15 @@ async function handleTransactions(c: Context, walletId: string) {
       appSecret: PRIVY_APP_SECRET,
     });
 
-    // Step 4: Sign message for wallet authorization
-    // const signature = await signMessageForWallet(
+    // Step 5: Sign message for wallet authorization
+    // const signature = await _signMessageForWallet(
     //   privy,
     //   walletId,
     //   token,
     //   transactionConfig,
     // );
 
-    // Step 5: Update wallet with policy
+    // Step 6: Update wallet with policy
     await updateWalletWithPolicy(
       privy,
       walletId,
@@ -352,10 +475,10 @@ async function handleTransactions(c: Context, walletId: string) {
       transactionConfig.policyId,
     );
 
-    // Step 6: Encode transfer data
+    // Step 7: Encode transfer data
     const encodedData = encodeTransferData(transactionConfig);
 
-    // Step 7: Send transaction
+    // Step 8: Send transaction
     const transactionResult = await sendTransaction(
       privy,
       walletId,
@@ -364,6 +487,9 @@ async function handleTransactions(c: Context, walletId: string) {
       transactionConfig,
       encodedData,
     );
+
+    // Step 9: Cache the transaction result
+    cacheTransactionResult(cacheKey, walletId, transactionResult);
 
     debugSuccess("Transaction completed successfully", transactionResult);
 

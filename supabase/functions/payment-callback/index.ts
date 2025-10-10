@@ -24,6 +24,7 @@ interface DaimoWebhookEvent {
   event:
     | "payment_started"
     | "payment.completed"
+    | "payment_completed"
     | "payment_bounced"
     | "payment_refunded";
   timestamp: string;
@@ -262,7 +263,7 @@ serve(async (req: Request) => {
     // If status is the same, check if this is a duplicate webhook
     if (currentStatus === newStatus) {
       console.log(
-        `Duplicate webhook received for payment ${webhookEvent.payment.id} with status ${newStatus}`,
+        `Duplicate webhook received for payment ${webhookEvent.payment.id} with status ${newStatus} for ${tableName}: ${orderNumber}`,
       );
       return new Response("Duplicate webhook ignored", { status: 200 });
     }
@@ -302,7 +303,11 @@ serve(async (req: Request) => {
     }
 
     console.log(
-      `Successfully updated order ${existingOrder.order_id} status from ${currentStatus} to ${newStatus}`,
+      `Successfully updated order ${
+        tableName === "orders"
+          ? existingOrder.order_id
+          : existingOrder.deposit_id
+      } status from ${currentStatus} to ${newStatus}`,
     );
 
     // Handle specific webhook types
@@ -407,7 +412,13 @@ async function handleWebhookType(
 ): Promise<void> {
   const orderId = order.order_id || order.deposit_id;
 
-  switch (webhook.event) {
+  let webhookEvent = webhook.event;
+
+  if (webhook.event === "payment.completed") {
+    webhookEvent = "payment_completed";
+  }
+
+  switch (webhookEvent) {
     case "payment_started":
       console.log(
         `Payment started for order ${orderId}: source tx ${webhook.payment.metadata?.transaction_hash} on chain ${webhook.payment.payinchainid}`,
@@ -415,13 +426,13 @@ async function handleWebhookType(
       // Add any payment started specific logic here
       break;
 
-    case "payment.completed": {
+    case "payment_completed": {
       console.log(
         `Payment completed for order ${orderId}: destination tx ${webhook.payment.metadata?.transaction_hash} on chain ${webhook.payment.payinchainid}`,
       );
       const paymentCompletedNotification = await pushNotification(
         order.merchant_id,
-        webhook.event,
+        webhookEvent,
         {
           message: "Payment completed",
           order_id: orderId,
@@ -451,7 +462,7 @@ async function handleWebhookType(
       );
       const paymentRefundNotification = await pushNotification(
         order.merchant_id,
-        webhook.event,
+        webhookEvent,
         {
           message: "Payment Refunded",
           order_id: orderId,
@@ -469,6 +480,6 @@ async function handleWebhookType(
     }
 
     default:
-      console.warn(`Unhandled webhook type: ${webhook.event}`);
+      console.warn(`Unhandled webhook type: ${webhookEvent}`);
   }
 }
