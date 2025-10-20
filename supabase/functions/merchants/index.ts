@@ -1,18 +1,31 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
   extractBearerToken,
   verifyDynamicJWT,
   verifyPrivyJWT,
 } from "./utils.ts";
+import { 
+  setMerchantPin, 
+  updateMerchantPin, 
+  revokeMerchantPin, 
+  validatePinCode,
+  requirePinValidation,
+  extractPinFromHeaders,
+  extractClientInfo,
+  type PinValidationResult,
+  type PinManagementResult,
+  type MerchantStatus
+} from '../../_shared/pin-validation.ts';
 
 const DEFAULT_TOKEN_ID = "USDC_BASE";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, GET, PUT, OPTIONS",
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type, x-pin-code',
+  'Access-Control-Allow-Methods': 'POST, GET, PUT, DELETE, OPTIONS',
 };
 
 interface Merchant {
@@ -27,6 +40,28 @@ interface Merchant {
   default_token_id?: string;
   default_language?: string;
   updated_at?: string;
+  status?: string;
+  pin_code_hash?: string;
+  pin_code_attempts?: number;
+  pin_code_blocked_at?: string;
+  pin_code_last_attempt_at?: string;
+}
+
+interface SetPinRequest {
+  pin_code: string;
+}
+
+interface UpdatePinRequest {
+  current_pin: string;
+  new_pin: string;
+}
+
+interface RevokePinRequest {
+  pin_code: string;
+}
+
+interface ValidatePinRequest {
+  pin_code: string;
 }
 
 interface PostPayload {
@@ -144,7 +179,20 @@ async function handleGet(
   try {
     const merchantQuery = supabase
       .from("merchants")
-      .select("*");
+      .select(`
+        merchant_id,
+        dynamic_id,
+        privy_id,
+        email,
+        display_name,
+        wallet_address,
+        logo_url,
+        default_token_id,
+        status,
+        pin_code_hash,
+        created_at,
+        updated_at
+      `);
 
     // Use appropriate column based on auth provider
     const { data, error } = isPrivyAuth
@@ -171,10 +219,26 @@ async function handleGet(
       );
     }
 
+    // Create safe profile object without sensitive PIN fields
+    const safeProfile = {
+      merchant_id: data.merchant_id,
+      dynamic_id: data.dynamic_id,
+      privy_id: data.privy_id,
+      email: data.email,
+      display_name: data.display_name,
+      wallet_address: data.wallet_address,
+      logo_url: data.logo_url,
+      default_token_id: data.default_token_id,
+      status: data.status,
+      has_pin: !!data.pin_code_hash, // Only expose boolean, not the actual hash
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+    };
+
     return Response.json(
       {
         success: true,
-        profile: data,
+        profile: safeProfile,
       },
       {
         status: 200,
@@ -405,6 +469,277 @@ async function handlePut(
   }
 }
 
+// PIN Code Management Handlers
+
+// Set PIN Code handler
+async function handleSetPin(request: Request, supabase: any, dynamicId: string) {
+  try {
+    const requestData: SetPinRequest = await request.json();
+    const { pin_code } = requestData;
+    
+    // Get merchant ID
+    const { data: merchant, error: merchantError } = await supabase
+      .from('merchants')
+      .select('merchant_id')
+      .eq('dynamic_id', dynamicId)
+      .single();
+      
+    if (merchantError || !merchant) {
+      return Response.json(
+        { success: false, error: 'Merchant not found' },
+        { status: 404, headers: corsHeaders }
+      );
+    }
+    
+    // Extract client info
+    const { ipAddress, userAgent } = extractClientInfo(request);
+    
+    // Set PIN using shared utility
+    const result = await setMerchantPin(supabase, merchant.merchant_id, pin_code, ipAddress, userAgent);
+    
+    return Response.json(
+      { success: result.success, message: result.message, error: result.error },
+      { status: result.success ? 200 : 400, headers: corsHeaders }
+    );
+  } catch (error) {
+    return Response.json(
+      { success: false, error: `Server error: ${error instanceof Error ? error.message : 'Unknown error'}` },
+      { status: 500, headers: corsHeaders }
+    );
+  }
+}
+
+// Update PIN Code handler
+async function handleUpdatePin(request: Request, supabase: any, dynamicId: string) {
+  try {
+    const requestData: UpdatePinRequest = await request.json();
+    const { current_pin, new_pin } = requestData;
+    
+    // Get merchant ID
+    const { data: merchant, error: merchantError } = await supabase
+      .from('merchants')
+      .select('merchant_id')
+      .eq('dynamic_id', dynamicId)
+      .single();
+      
+    if (merchantError || !merchant) {
+      return Response.json(
+        { success: false, error: 'Merchant not found' },
+        { status: 404, headers: corsHeaders }
+      );
+    }
+    
+    // PIN validation middleware for PIN update operations (required)
+    const pinCodeFromHeader = extractPinFromHeaders(request);
+    if (!pinCodeFromHeader) {
+      return Response.json(
+        { 
+          success: false,
+          error: 'PIN code is required for PIN update operations',
+          code: 'PIN_REQUIRED'
+        },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+    
+    const { ipAddress, userAgent } = extractClientInfo(request);
+    
+    const pinValidation = await requirePinValidation({
+      supabase,
+      merchantId: merchant.merchant_id,
+      pinCode: pinCodeFromHeader,
+      ipAddress,
+      userAgent
+    });
+    
+    if (!pinValidation.success) {
+      return Response.json(
+        { 
+          success: false,
+          error: pinValidation.error,
+          attempts_remaining: pinValidation.result?.attempts_remaining,
+          is_blocked: pinValidation.result?.is_blocked
+        },
+        { status: 401, headers: corsHeaders }
+      );
+    }
+    
+    // Update PIN using shared utility
+    const result = await updateMerchantPin(supabase, merchant.merchant_id, current_pin, new_pin, ipAddress, userAgent);
+    
+    return Response.json(
+      { success: result.success, message: result.message, error: result.error },
+      { status: result.success ? 200 : 400, headers: corsHeaders }
+    );
+  } catch (error) {
+    return Response.json(
+      { success: false, error: `Server error: ${error instanceof Error ? error.message : 'Unknown error'}` },
+      { status: 500, headers: corsHeaders }
+    );
+  }
+}
+
+// Revoke PIN Code handler
+async function handleRevokePin(request: Request, supabase: any, dynamicId: string) {
+  try {
+    const requestData: RevokePinRequest = await request.json();
+    const { pin_code } = requestData;
+    
+    // Get merchant ID
+    const { data: merchant, error: merchantError } = await supabase
+      .from('merchants')
+      .select('merchant_id')
+      .eq('dynamic_id', dynamicId)
+      .single();
+      
+    if (merchantError || !merchant) {
+      return Response.json(
+        { success: false, error: 'Merchant not found' },
+        { status: 404, headers: corsHeaders }
+      );
+    }
+    
+    // PIN validation middleware for PIN revoke operations (required)
+    const pinCodeFromHeader = extractPinFromHeaders(request);
+    if (!pinCodeFromHeader) {
+      return Response.json(
+        { 
+          success: false,
+          error: 'PIN code is required for PIN revoke operations',
+          code: 'PIN_REQUIRED'
+        },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+    
+    const { ipAddress, userAgent } = extractClientInfo(request);
+    
+    const pinValidation = await requirePinValidation({
+      supabase,
+      merchantId: merchant.merchant_id,
+      pinCode: pinCodeFromHeader,
+      ipAddress,
+      userAgent
+    });
+    
+    if (!pinValidation.success) {
+      return Response.json(
+        { 
+          success: false,
+          error: pinValidation.error,
+          attempts_remaining: pinValidation.result?.attempts_remaining,
+          is_blocked: pinValidation.result?.is_blocked
+        },
+        { status: 401, headers: corsHeaders }
+      );
+    }
+    
+    // Revoke PIN using shared utility
+    const result = await revokeMerchantPin(supabase, merchant.merchant_id, pin_code, ipAddress, userAgent);
+    
+    return Response.json(
+      { success: result.success, message: result.message, error: result.error },
+      { status: result.success ? 200 : 400, headers: corsHeaders }
+    );
+  } catch (error) {
+    return Response.json(
+      { success: false, error: `Server error: ${error instanceof Error ? error.message : 'Unknown error'}` },
+      { status: 500, headers: corsHeaders }
+    );
+  }
+}
+
+// Validate PIN Code handler
+async function handleValidatePin(request: Request, supabase: any, dynamicId: string) {
+  try {
+    const requestData: ValidatePinRequest = await request.json();
+    const { pin_code } = requestData;
+    
+    // Get merchant ID
+    const { data: merchant, error: merchantError } = await supabase
+      .from('merchants')
+      .select('merchant_id')
+      .eq('dynamic_id', dynamicId)
+      .single();
+      
+    if (merchantError || !merchant) {
+      return Response.json(
+        { success: false, error: 'Merchant not found' },
+        { status: 404, headers: corsHeaders }
+      );
+    }
+    
+    // Extract client info
+    const { ipAddress, userAgent } = extractClientInfo(request);
+    
+    // Validate PIN using shared utility
+    const result = await validatePinCode(supabase, merchant.merchant_id, pin_code, ipAddress, userAgent);
+    
+    return Response.json(
+      {
+        success: result.success,
+        attempts_remaining: result.attempts_remaining,
+        is_blocked: result.is_blocked,
+        message: result.message
+      },
+      { status: result.success ? 200 : 401, headers: corsHeaders }
+    );
+  } catch (error) {
+    return Response.json(
+      { success: false, error: `Server error: ${error instanceof Error ? error.message : 'Unknown error'}` },
+      { status: 500, headers: corsHeaders }
+    );
+  }
+}
+
+// Check merchant status handler
+async function handleCheckStatus(_request: Request, supabase: any, dynamicId: string) {
+  try {
+    const { data: merchant, error: merchantError } = await supabase
+      .from('merchants')
+      .select('merchant_id')
+      .eq('dynamic_id', dynamicId)
+      .single();
+      
+    if (merchantError || !merchant) {
+      return Response.json(
+        { success: false, error: 'Merchant not found' },
+        { status: 404, headers: corsHeaders }
+      );
+    }
+    
+    // Get merchant status data directly
+    const { data: merchantStatus, error: statusError } = await supabase
+      .from('merchants')
+      .select('status, pin_code_hash, pin_code_attempts, pin_code_blocked_at')
+      .eq('merchant_id', merchant.merchant_id)
+      .single();
+    
+    if (statusError) {
+      return Response.json(
+        { success: false, error: 'Failed to get merchant status' },
+        { status: 500, headers: corsHeaders }
+      );
+    }
+    
+    return Response.json(
+      {
+        success: true,
+        status: merchantStatus.status || 'ACTIVE',
+        has_pin: !!merchantStatus.pin_code_hash,
+        pin_attempts: merchantStatus.pin_code_attempts || 0,
+        pin_blocked_at: merchantStatus.pin_code_blocked_at
+      },
+      { status: 200, headers: corsHeaders }
+    );
+  } catch (error) {
+    return Response.json(
+      { success: false, error: `Server error: ${error instanceof Error ? error.message : 'Unknown error'}` },
+      { status: 500, headers: corsHeaders }
+    );
+  }
+}
+
 // Main serve function
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -500,6 +835,77 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+    // Check merchant status before allowing access (except for PIN validation)
+    const url = new URL(req.url);
+    const pathSegments = url.pathname.split('/').filter(Boolean);
+    const isPinValidation = pathSegments.includes('pin') && pathSegments.includes('validate');
+    
+    if (!isPinValidation) {
+      // Get merchant ID and status for checking
+      const { data: merchant, error: merchantError } = await supabase
+        .from('merchants')
+        .select('merchant_id, status')
+        .eq('dynamic_id', dynamicId)
+        .single();
+        
+      if (!merchantError && merchant) {
+        // Check merchant status (PIN_BLOCKED or INACTIVE)
+        if (merchant.status === 'PIN_BLOCKED') {
+          return Response.json(
+            { 
+              error: 'Account blocked due to PIN security violations',
+              code: 'PIN_BLOCKED'
+            },
+            { status: 403, headers: corsHeaders }
+          );
+        }
+
+        if (merchant.status === 'INACTIVE') {
+          return Response.json(
+            { 
+              error: 'Account is inactive',
+              code: 'INACTIVE'
+            },
+            { status: 403, headers: corsHeaders }
+          );
+        }
+      }
+    }
+
+    // Route handling based on URL path
+    const path = url.pathname;
+    
+    // PIN Code Management Routes
+    if (path.includes('/pin')) {
+      switch (req.method) {
+        case 'POST':
+          if (path.includes('/pin/validate')) {
+            return await handleValidatePin(req, supabase, dynamicId);
+          } else if (path.includes('/pin')) {
+            return await handleSetPin(req, supabase, dynamicId);
+          }
+          break;
+        case 'PUT':
+          if (path.includes('/pin')) {
+            return await handleUpdatePin(req, supabase, dynamicId);
+          }
+          break;
+        case 'DELETE':
+          if (path.includes('/pin')) {
+            return await handleRevokePin(req, supabase, dynamicId);
+          }
+          break;
+      }
+    }
+    
+    // Status check route
+    if (path.includes('/status')) {
+      if (req.method === 'GET') {
+        return await handleCheckStatus(req, supabase, dynamicId);
+      }
+    }
+
+    // Original merchant management routes
     switch (req.method) {
       case "GET":
         return await handleGet(req, supabase, userProviderId, isPrivyAuth);

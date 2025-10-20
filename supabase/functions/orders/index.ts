@@ -59,6 +59,7 @@ async function createOrder(
         dynamic_id,
         privy_id,
         wallet_address,
+        status,
         tokens!inner(chain_id, token_address),
         logo_url
       `,
@@ -73,6 +74,23 @@ async function createOrder(
       return {
         success: false,
         error: "Merchant not found or has no default token configured",
+      };
+    }
+
+    // Check merchant status (PIN_BLOCKED or INACTIVE)
+    if (merchant.status === 'PIN_BLOCKED') {
+      return {
+        success: false,
+        error: 'Account blocked due to PIN security violations',
+        code: 'PIN_BLOCKED'
+      };
+    }
+
+    if (merchant.status === 'INACTIVE') {
+      return {
+        success: false,
+        error: 'Account is inactive',
+        code: 'INACTIVE'
       };
     }
 
@@ -176,7 +194,7 @@ async function handleGetSingleOrder(
   try {
     const merchantQuery = supabase
       .from("merchants")
-      .select(`merchant_id`);
+      .select(`merchant_id, status`);
 
     // Use appropriate column based on auth provider
     const { data: merchant, error: merchantError } = isPrivyAuth
@@ -190,6 +208,29 @@ async function handleGetSingleOrder(
           status: 404,
           headers: corsHeaders,
         },
+      );
+    }
+
+    // Check merchant status (PIN_BLOCKED or INACTIVE)
+    if (merchant.status === 'PIN_BLOCKED') {
+      return Response.json(
+        { 
+          success: false,
+          error: 'Account blocked due to PIN security violations',
+          code: 'PIN_BLOCKED'
+        },
+        { status: 403, headers: corsHeaders }
+      );
+    }
+
+    if (merchant.status === 'INACTIVE') {
+      return Response.json(
+        { 
+          success: false,
+          error: 'Account is inactive',
+          code: 'INACTIVE'
+        },
+        { status: 403, headers: corsHeaders }
       );
     }
 
@@ -257,7 +298,7 @@ async function handleGetAllOrders(
   try {
     const merchantQuery = supabase
       .from("merchants")
-      .select(`merchant_id`);
+      .select(`merchant_id, status`);
 
     // Use appropriate column based on auth provider
     const { data: merchant, error: merchantError } = isPrivyAuth
@@ -271,6 +312,29 @@ async function handleGetAllOrders(
           status: 404,
           headers: corsHeaders,
         },
+      );
+    }
+
+    // Check merchant status (PIN_BLOCKED or INACTIVE)
+    if (merchant.status === 'PIN_BLOCKED') {
+      return Response.json(
+        { 
+          success: false,
+          error: 'Account blocked due to PIN security violations',
+          code: 'PIN_BLOCKED'
+        },
+        { status: 403, headers: corsHeaders }
+      );
+    }
+
+    if (merchant.status === 'INACTIVE') {
+      return Response.json(
+        { 
+          success: false,
+          error: 'Account is inactive',
+          code: 'INACTIVE'
+        },
+        { status: 403, headers: corsHeaders }
       );
     }
 
