@@ -3,8 +3,15 @@ import { cors } from "@hono/hono/cors";
 import { PrivyClient } from "@privy-io/node";
 import { Buffer } from "node:buffer";
 import { encodeFunctionData, erc20Abi } from "viem";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { dualAuthMiddleware } from "../../_shared/dual-auth-middleware.ts";
 import { extractBearerToken } from "../../_shared/utils.ts";
+import { 
+  requirePinValidation, 
+  extractPinFromHeaders,
+  extractClientInfo,
+  createBlockedResponse
+} from '../../_shared/pin-validation.ts';
 
 const functionName = "wallets";
 const app = new Hono().basePath(`/${functionName}`);
@@ -404,12 +411,51 @@ async function sendTransaction(
 }
 
 // --- MAIN TRANSACTION HANDLER ---
-async function handleTransactions(c: Context, walletId: string) {
-  debugLog("Starting transaction process", { walletId });
+async function handleTransactions(c: Context, walletId: string, userProviderId: string, isPrivyAuth: boolean) {
+  debugLog("Starting transaction process", { walletId, userProviderId, isPrivyAuth });
 
   try {
     // Clean up expired cache entries periodically
     cleanupExpiredCache();
+
+    // Initialize Supabase client for merchant status checking
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // Check merchant status before allowing transaction
+    const merchantQuery = supabase
+      .from("merchants")
+      .select("merchant_id, status");
+
+    const { data: merchantData, error: merchantError } = isPrivyAuth
+      ? await merchantQuery.eq("privy_id", userProviderId).single()
+      : await merchantQuery.eq("dynamic_id", userProviderId).single();
+
+    if (merchantError || !merchantData) {
+      debugError("Merchant not found", { merchantError, userProviderId, isPrivyAuth });
+      return c.json({
+        error: "Merchant not found",
+        details: "Unable to find merchant account"
+      }, 404);
+    }
+
+    // Check merchant status (PIN_BLOCKED or INACTIVE)
+    if (merchantData.status === 'PIN_BLOCKED') {
+      debugError("Merchant account blocked", { merchantId: merchantData.merchant_id, status: merchantData.status });
+      return c.json({
+        error: 'Account blocked due to PIN security violations',
+        code: 'PIN_BLOCKED'
+      }, 403);
+    }
+
+    if (merchantData.status === 'INACTIVE') {
+      debugError("Merchant account inactive", { merchantId: merchantData.merchant_id, status: merchantData.status });
+      return c.json({
+        error: 'Account is inactive',
+        code: 'INACTIVE'
+      }, 403);
+    }
 
     // Step 1: Parse and validate request body
     const requestBody = await c.req.json();
@@ -441,7 +487,53 @@ async function handleTransactions(c: Context, walletId: string) {
       });
     }
 
-    // Step 3: Validate request and get wallet owner
+    // Step 3: PIN validation for wallet transactions (mandatory if PIN is set)
+    const pinCode = extractPinFromHeaders(c.req.raw);
+    const { ipAddress, userAgent } = extractClientInfo(c.req.raw);
+    
+    // Check if merchant has PIN set by querying merchant data
+    const { data: merchantWithPin, error: pinError } = await supabase
+      .from('merchants')
+      .select('pin_code_hash')
+      .eq('merchant_id', merchantData.merchant_id)
+      .single();
+    
+    if (!pinError && merchantWithPin && merchantWithPin.pin_code_hash) {
+      // PIN is required for wallet transactions
+      if (!pinCode) {
+        debugError("PIN code required for transaction", { merchantId: merchantData.merchant_id });
+        return c.json({
+          error: 'PIN code is required for wallet transaction operations',
+          code: 'PIN_REQUIRED'
+        }, 400);
+      }
+      
+      // Validate PIN code
+      const pinValidation = await requirePinValidation({
+        supabase,
+        merchantId: merchantData.merchant_id,
+        pinCode,
+        ipAddress,
+        userAgent
+      });
+      
+      if (!pinValidation.success) {
+        debugError("PIN validation failed", { 
+          merchantId: merchantData.merchant_id, 
+          error: pinValidation.error,
+          attemptsRemaining: pinValidation.result?.attempts_remaining 
+        });
+        return c.json({
+          error: pinValidation.error,
+          attempts_remaining: pinValidation.result?.attempts_remaining,
+          is_blocked: pinValidation.result?.is_blocked
+        }, 401);
+      }
+      
+      debugSuccess("PIN validation successful", { merchantId: merchantData.merchant_id });
+    }
+
+    // Step 4: Validate request and get wallet owner
     const authHeader = c.req.header("Authorization");
     const { token, walletOwner } = await validateTransactionRequest(
       authHeader ?? null,
@@ -518,7 +610,7 @@ app.use(
   "*",
   cors({
     origin: "*",
-    allowHeaders: ["authorization", "x-client-info", "apikey", "content-type"],
+    allowHeaders: ["authorization", "x-client-info", "apikey", "content-type", "x-pin-code"],
     allowMethods: ["POST", "GET", "OPTIONS"],
   }),
 );
@@ -545,7 +637,18 @@ app.post(
       }, 500);
     }
 
-    return handleTransactions(c, c.req.param("walletId"));
+    // Get authentication context from dualAuthMiddleware
+    const userProviderId = c.get('dynamicId') || c.get('privyId');
+    const isPrivyAuth = !!c.get('privyId');
+
+    if (!userProviderId) {
+      return c.json({
+        error: "Authentication required",
+        details: "Unable to identify user"
+      }, 401);
+    }
+
+    return handleTransactions(c, c.req.param("walletId"), userProviderId, isPrivyAuth);
   },
 );
 Deno.serve(app.fetch);

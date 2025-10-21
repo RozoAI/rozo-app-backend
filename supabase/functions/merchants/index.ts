@@ -472,23 +472,30 @@ async function handlePut(
 // PIN Code Management Handlers
 
 // Set PIN Code handler
-async function handleSetPin(request: Request, supabase: any, dynamicId: string) {
+async function handleSetPin(request: Request, supabase: any, userProviderId: string, isPrivyAuth: boolean) {
   try {
     const requestData: SetPinRequest = await request.json();
     const { pin_code } = requestData;
     
-    // Get merchant ID
-    const { data: merchant, error: merchantError } = await supabase
+    // Get merchant ID and status
+    const merchantQuery = supabase
       .from('merchants')
-      .select('merchant_id')
-      .eq('dynamic_id', dynamicId)
-      .single();
+      .select('merchant_id, status');
+    
+    const { data: merchant, error: merchantError } = isPrivyAuth
+      ? await merchantQuery.eq('privy_id', userProviderId).single()
+      : await merchantQuery.eq('dynamic_id', userProviderId).single();
       
     if (merchantError || !merchant) {
       return Response.json(
         { success: false, error: 'Merchant not found' },
         { status: 404, headers: corsHeaders }
       );
+    }
+    
+    // Check merchant status
+    if (merchant.status === 'PIN_BLOCKED' || merchant.status === 'INACTIVE') {
+      return createBlockedResponse();
     }
     
     // Extract client info
@@ -510,23 +517,30 @@ async function handleSetPin(request: Request, supabase: any, dynamicId: string) 
 }
 
 // Update PIN Code handler
-async function handleUpdatePin(request: Request, supabase: any, dynamicId: string) {
+async function handleUpdatePin(request: Request, supabase: any, userProviderId: string, isPrivyAuth: boolean) {
   try {
     const requestData: UpdatePinRequest = await request.json();
     const { current_pin, new_pin } = requestData;
     
-    // Get merchant ID
-    const { data: merchant, error: merchantError } = await supabase
+    // Get merchant ID and status
+    const merchantQuery = supabase
       .from('merchants')
-      .select('merchant_id')
-      .eq('dynamic_id', dynamicId)
-      .single();
+      .select('merchant_id, status');
+    
+    const { data: merchant, error: merchantError } = isPrivyAuth
+      ? await merchantQuery.eq('privy_id', userProviderId).single()
+      : await merchantQuery.eq('dynamic_id', userProviderId).single();
       
     if (merchantError || !merchant) {
       return Response.json(
         { success: false, error: 'Merchant not found' },
         { status: 404, headers: corsHeaders }
       );
+    }
+    
+    // Check merchant status
+    if (merchant.status === 'PIN_BLOCKED' || merchant.status === 'INACTIVE') {
+      return createBlockedResponse();
     }
     
     // PIN validation middleware for PIN update operations (required)
@@ -580,23 +594,30 @@ async function handleUpdatePin(request: Request, supabase: any, dynamicId: strin
 }
 
 // Revoke PIN Code handler
-async function handleRevokePin(request: Request, supabase: any, dynamicId: string) {
+async function handleRevokePin(request: Request, supabase: any, userProviderId: string, isPrivyAuth: boolean) {
   try {
     const requestData: RevokePinRequest = await request.json();
     const { pin_code } = requestData;
     
-    // Get merchant ID
-    const { data: merchant, error: merchantError } = await supabase
+    // Get merchant ID and status
+    const merchantQuery = supabase
       .from('merchants')
-      .select('merchant_id')
-      .eq('dynamic_id', dynamicId)
-      .single();
+      .select('merchant_id, status');
+    
+    const { data: merchant, error: merchantError } = isPrivyAuth
+      ? await merchantQuery.eq('privy_id', userProviderId).single()
+      : await merchantQuery.eq('dynamic_id', userProviderId).single();
       
     if (merchantError || !merchant) {
       return Response.json(
         { success: false, error: 'Merchant not found' },
         { status: 404, headers: corsHeaders }
       );
+    }
+    
+    // Check merchant status
+    if (merchant.status === 'PIN_BLOCKED' || merchant.status === 'INACTIVE') {
+      return createBlockedResponse();
     }
     
     // PIN validation middleware for PIN revoke operations (required)
@@ -650,23 +671,30 @@ async function handleRevokePin(request: Request, supabase: any, dynamicId: strin
 }
 
 // Validate PIN Code handler
-async function handleValidatePin(request: Request, supabase: any, dynamicId: string) {
+async function handleValidatePin(request: Request, supabase: any, userProviderId: string, isPrivyAuth: boolean) {
   try {
     const requestData: ValidatePinRequest = await request.json();
     const { pin_code } = requestData;
     
-    // Get merchant ID
-    const { data: merchant, error: merchantError } = await supabase
+    // Get merchant ID and status
+    const merchantQuery = supabase
       .from('merchants')
-      .select('merchant_id')
-      .eq('dynamic_id', dynamicId)
-      .single();
+      .select('merchant_id, status');
+    
+    const { data: merchant, error: merchantError } = isPrivyAuth
+      ? await merchantQuery.eq('privy_id', userProviderId).single()
+      : await merchantQuery.eq('dynamic_id', userProviderId).single();
       
     if (merchantError || !merchant) {
       return Response.json(
         { success: false, error: 'Merchant not found' },
         { status: 404, headers: corsHeaders }
       );
+    }
+    
+    // Check merchant status
+    if (merchant.status === 'PIN_BLOCKED' || merchant.status === 'INACTIVE') {
+      return createBlockedResponse();
     }
     
     // Extract client info
@@ -693,19 +721,26 @@ async function handleValidatePin(request: Request, supabase: any, dynamicId: str
 }
 
 // Check merchant status handler
-async function handleCheckStatus(_request: Request, supabase: any, dynamicId: string) {
+async function handleCheckStatus(_request: Request, supabase: any, userProviderId: string, isPrivyAuth: boolean) {
   try {
-    const { data: merchant, error: merchantError } = await supabase
+    const merchantQuery = supabase
       .from('merchants')
-      .select('merchant_id')
-      .eq('dynamic_id', dynamicId)
-      .single();
+      .select('merchant_id, status');
+    
+    const { data: merchant, error: merchantError } = isPrivyAuth
+      ? await merchantQuery.eq('privy_id', userProviderId).single()
+      : await merchantQuery.eq('dynamic_id', userProviderId).single();
       
     if (merchantError || !merchant) {
       return Response.json(
         { success: false, error: 'Merchant not found' },
         { status: 404, headers: corsHeaders }
       );
+    }
+    
+    // Check merchant status
+    if (merchant.status === 'PIN_BLOCKED' || merchant.status === 'INACTIVE') {
+      return createBlockedResponse();
     }
     
     // Get merchant status data directly
@@ -842,11 +877,13 @@ serve(async (req) => {
     
     if (!isPinValidation) {
       // Get merchant ID and status for checking
-      const { data: merchant, error: merchantError } = await supabase
+      const merchantQuery = supabase
         .from('merchants')
-        .select('merchant_id, status')
-        .eq('dynamic_id', dynamicId)
-        .single();
+        .select('merchant_id, status');
+      
+      const { data: merchant, error: merchantError } = isPrivyAuth
+        ? await merchantQuery.eq('privy_id', userProviderId).single()
+        : await merchantQuery.eq('dynamic_id', userProviderId).single();
         
       if (!merchantError && merchant) {
         // Check merchant status (PIN_BLOCKED or INACTIVE)
@@ -880,19 +917,19 @@ serve(async (req) => {
       switch (req.method) {
         case 'POST':
           if (path.includes('/pin/validate')) {
-            return await handleValidatePin(req, supabase, dynamicId);
+            return await handleValidatePin(req, supabase, userProviderId, isPrivyAuth);
           } else if (path.includes('/pin')) {
-            return await handleSetPin(req, supabase, dynamicId);
+            return await handleSetPin(req, supabase, userProviderId, isPrivyAuth);
           }
           break;
         case 'PUT':
           if (path.includes('/pin')) {
-            return await handleUpdatePin(req, supabase, dynamicId);
+            return await handleUpdatePin(req, supabase, userProviderId, isPrivyAuth);
           }
           break;
         case 'DELETE':
           if (path.includes('/pin')) {
-            return await handleRevokePin(req, supabase, dynamicId);
+            return await handleRevokePin(req, supabase, userProviderId, isPrivyAuth);
           }
           break;
       }
@@ -901,7 +938,7 @@ serve(async (req) => {
     // Status check route
     if (path.includes('/status')) {
       if (req.method === 'GET') {
-        return await handleCheckStatus(req, supabase, dynamicId);
+        return await handleCheckStatus(req, supabase, userProviderId, isPrivyAuth);
       }
     }
 
