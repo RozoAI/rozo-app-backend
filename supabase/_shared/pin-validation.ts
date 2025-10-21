@@ -12,7 +12,7 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { hash, compare, genSalt } from 'https://deno.land/x/bcrypt@v0.4.1/mod.ts';
+import bcrypt from 'https://esm.sh/bcryptjs@2.4.3';
 
 // ============================================================================
 // TYPES AND INTERFACES
@@ -55,9 +55,6 @@ export interface MerchantStatus {
   pin_blocked_at: string | null;
 }
 
-// PIN Actions for audit logging
-export type PinAction = 'SET' | 'UPDATE' | 'REVOKE' | 'VALIDATE_SUCCESS' | 'VALIDATE_FAILED' | 'BLOCKED';
-
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -71,18 +68,18 @@ const BCRYPT_SALT_ROUNDS = 12;
 // ============================================================================
 
 /**
- * Hash a PIN code using bcrypt
+ * Hash a PIN code using bcryptjs
  */
 export async function hashPinCode(pinCode: string): Promise<string> {
-  const salt = await genSalt(BCRYPT_SALT_ROUNDS);
-  return await hash(pinCode, salt);
+  const salt = bcrypt.genSaltSync(BCRYPT_SALT_ROUNDS);
+  return bcrypt.hashSync(pinCode, salt);
 }
 
 /**
  * Verify a PIN code against its hash
  */
 export async function verifyPinCode(pinCode: string, hashedPin: string): Promise<boolean> {
-  return await compare(pinCode, hashedPin);
+  return bcrypt.compareSync(pinCode, hashedPin);
 }
 
 /**
@@ -103,30 +100,6 @@ export function validatePinCodeInput(pinCode: string): { valid: boolean; error?:
 // ============================================================================
 // DATABASE OPERATIONS
 // ============================================================================
-
-/**
- * Log PIN action to audit trail
- */
-async function logPinAction(
-  supabase: any, 
-  merchantId: string, 
-  action: PinAction, 
-  ipAddress?: string, 
-  userAgent?: string
-): Promise<void> {
-  try {
-    await supabase
-      .from('merchant_pin_audit_log')
-      .insert({
-        merchant_id: merchantId,
-        action,
-        ip_address: ipAddress,
-        user_agent: userAgent
-      });
-  } catch (error) {
-    console.error('Failed to log PIN action:', error);
-  }
-}
 
 /**
  * Get merchant PIN data from database
@@ -226,7 +199,6 @@ export async function validatePinCode(
     if (isValid) {
       // Reset attempts on success
       await resetPinAttempts(supabase, merchantId);
-      await logPinAction(supabase, merchantId, 'VALIDATE_SUCCESS', ipAddress, userAgent);
       
       return { 
         success: true, 
@@ -238,12 +210,10 @@ export async function validatePinCode(
       // Increment attempts
       const newAttempts = merchant.pin_code_attempts + 1;
       await incrementPinAttempts(supabase, merchantId, newAttempts);
-      await logPinAction(supabase, merchantId, 'VALIDATE_FAILED', ipAddress, userAgent);
       
       if (newAttempts >= MAX_ATTEMPTS) {
         // Block merchant
         await blockMerchant(supabase, merchantId);
-        await logPinAction(supabase, merchantId, 'BLOCKED', ipAddress, userAgent);
         
         return { 
           success: false, 
@@ -347,9 +317,6 @@ export async function setMerchantPin(
       return { success: false, message: updateError.message };
     }
     
-    // Log PIN action
-    await logPinAction(supabase, merchantId, 'SET', ipAddress, userAgent);
-    
     return { success: true, message: 'PIN code set successfully' };
   } catch (error) {
     console.error('Set PIN error:', error);
@@ -418,9 +385,6 @@ export async function updateMerchantPin(
       return { success: false, message: updateError.message };
     }
     
-    // Log PIN action
-    await logPinAction(supabase, merchantId, 'UPDATE', ipAddress, userAgent);
-    
     return { success: true, message: 'PIN code updated successfully' };
   } catch (error) {
     console.error('Update PIN error:', error);
@@ -478,9 +442,6 @@ export async function revokeMerchantPin(
       return { success: false, message: updateError.message };
     }
     
-    // Log PIN action
-    await logPinAction(supabase, merchantId, 'REVOKE', ipAddress, userAgent);
-    
     return { success: true, message: 'PIN code revoked successfully' };
   } catch (error) {
     console.error('Revoke PIN error:', error);
@@ -533,6 +494,7 @@ export async function requirePinValidation(options: PinValidationMiddlewareOptio
 export function createBlockedResponse(): Response {
   return Response.json(
     { 
+      success: false,
       error: 'Account blocked due to PIN security violations',
       code: 'PIN_BLOCKED'
     },

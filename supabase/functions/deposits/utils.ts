@@ -1,5 +1,5 @@
 import { createDaimoPaymentLink } from "../../_shared/daimo-pay.ts";
-import { generateOrderNumber } from "../../_shared/utils.ts";
+import { generateOrderNumber, extractBearerToken } from "../../_shared/utils.ts";
 
 export interface CreateDepositRequest {
   display_amount: number;
@@ -140,20 +140,4 @@ export async function createDeposit(
       error: error instanceof Error ? error.message : "Unknown error",
     };
   }
-}
-
-/**
- * Extract Bearer token from Authorization header
- * @param authHeader - The Authorization header value
- * @returns The token string or null if invalid
- */
-export function extractBearerToken(authHeader: string | null): string | null {
-  if (!authHeader) return null;
-
-  const parts = authHeader.split(" ");
-  if (parts.length !== 2 || parts[0] !== "Bearer") {
-    return null;
-  }
-
-  return parts[1];
 }

@@ -246,19 +246,23 @@ async function handleCreateDeposit(c: Context) {
     const supabase = c.get("supabase");
     const isPrivyAuth = c.get("isPrivyAuth");
 
-    // Get merchant data for status checking
-    const { data: merchant, error: merchantError } = await supabase
-      .from('merchants')
-      .select('merchant_id, status')
-      .eq('dynamic_id', dynamicId)
-      .single();
-
-    if (merchantError || !merchant) {
-      return c.json(
+    const merchantQuery = supabase
+    .from('merchants')
+    .select('merchant_id, status');
+  
+  const { data: merchant, error: merchantError } = isPrivyAuth
+    ? await merchantQuery.eq('privy_id', dynamicId).single()
+    : await merchantQuery.eq('dynamic_id', dynamicId).single();
+    
+  if (merchantError || !merchant) {
+    return {
+      merchant: null,
+      error: Response.json(
         { success: false, error: 'Merchant not found' },
-        404,
-      );
-    }
+        { status: 404, headers: corsHeaders }
+      )
+    };
+  }
 
     // Check merchant status (PIN_BLOCKED or INACTIVE)
     if (merchant.status === 'PIN_BLOCKED') {

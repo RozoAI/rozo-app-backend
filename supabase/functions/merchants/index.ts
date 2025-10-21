@@ -5,7 +5,7 @@ import {
   extractBearerToken,
   verifyDynamicJWT,
   verifyPrivyJWT,
-} from "./utils.ts";
+} from "../../_shared/utils.ts";
 import { 
   setMerchantPin, 
   updateMerchantPin, 
@@ -14,6 +14,7 @@ import {
   requirePinValidation,
   extractPinFromHeaders,
   extractClientInfo,
+  createBlockedResponse,
   type PinValidationResult,
   type PinManagementResult,
   type MerchantStatus
@@ -448,32 +449,51 @@ async function handlePut(
 
 // PIN Code Management Handlers
 
+// Helper function to get merchant and check status
+async function getMerchantWithStatusCheck(
+  supabase: any,
+  userProviderId: string,
+  isPrivyAuth: boolean,
+  checkBlocked: boolean = true
+): Promise<{ merchant: any; error: Response | null }> {
+  const merchantQuery = supabase
+    .from('merchants')
+    .select('merchant_id, status');
+  
+  const { data: merchant, error: merchantError } = isPrivyAuth
+    ? await merchantQuery.eq('privy_id', userProviderId).single()
+    : await merchantQuery.eq('dynamic_id', userProviderId).single();
+    
+  if (merchantError || !merchant) {
+    return {
+      merchant: null,
+      error: Response.json(
+        { success: false, error: 'Merchant not found' },
+        { status: 404, headers: corsHeaders }
+      )
+    };
+  }
+  
+  // Check merchant status if required
+  if (checkBlocked && (merchant.status === 'PIN_BLOCKED' || merchant.status === 'INACTIVE')) {
+    return {
+      merchant: null,
+      error: createBlockedResponse()
+    };
+  }
+  
+  return { merchant, error: null };
+}
+
 // Set PIN Code handler
 async function handleSetPin(request: Request, supabase: any, userProviderId: string, isPrivyAuth: boolean) {
   try {
     const requestData: SetPinRequest = await request.json();
     const { pin_code } = requestData;
     
-    // Get merchant ID and status
-    const merchantQuery = supabase
-      .from('merchants')
-      .select('merchant_id, status');
-    
-    const { data: merchant, error: merchantError } = isPrivyAuth
-      ? await merchantQuery.eq('privy_id', userProviderId).single()
-      : await merchantQuery.eq('dynamic_id', userProviderId).single();
-      
-    if (merchantError || !merchant) {
-      return Response.json(
-        { success: false, error: 'Merchant not found' },
-        { status: 404, headers: corsHeaders }
-      );
-    }
-    
-    // Check merchant status
-    if (merchant.status === 'PIN_BLOCKED' || merchant.status === 'INACTIVE') {
-      return createBlockedResponse();
-    }
+    // Get merchant and check status
+    const { merchant, error } = await getMerchantWithStatusCheck(supabase, userProviderId, isPrivyAuth);
+    if (error) return error;
     
     // Extract client info
     const { ipAddress, userAgent } = extractClientInfo(request);
@@ -499,63 +519,14 @@ async function handleUpdatePin(request: Request, supabase: any, userProviderId: 
     const requestData: UpdatePinRequest = await request.json();
     const { current_pin, new_pin } = requestData;
     
-    // Get merchant ID and status
-    const merchantQuery = supabase
-      .from('merchants')
-      .select('merchant_id, status');
+    // Get merchant and check status
+    const { merchant, error } = await getMerchantWithStatusCheck(supabase, userProviderId, isPrivyAuth);
+    if (error) return error;
     
-    const { data: merchant, error: merchantError } = isPrivyAuth
-      ? await merchantQuery.eq('privy_id', userProviderId).single()
-      : await merchantQuery.eq('dynamic_id', userProviderId).single();
-      
-    if (merchantError || !merchant) {
-      return Response.json(
-        { success: false, error: 'Merchant not found' },
-        { status: 404, headers: corsHeaders }
-      );
-    }
-    
-    // Check merchant status
-    if (merchant.status === 'PIN_BLOCKED' || merchant.status === 'INACTIVE') {
-      return createBlockedResponse();
-    }
-    
-    // PIN validation middleware for PIN update operations (required)
-    const pinCodeFromHeader = extractPinFromHeaders(request);
-    if (!pinCodeFromHeader) {
-      return Response.json(
-        { 
-          success: false,
-          error: 'PIN code is required for PIN update operations',
-          code: 'PIN_REQUIRED'
-        },
-        { status: 400, headers: corsHeaders }
-      );
-    }
-    
+    // Extract client info
     const { ipAddress, userAgent } = extractClientInfo(request);
     
-    const pinValidation = await requirePinValidation({
-      supabase,
-      merchantId: merchant.merchant_id,
-      pinCode: pinCodeFromHeader,
-      ipAddress,
-      userAgent
-    });
-    
-    if (!pinValidation.success) {
-      return Response.json(
-        { 
-          success: false,
-          error: pinValidation.error,
-          attempts_remaining: pinValidation.result?.attempts_remaining,
-          is_blocked: pinValidation.result?.is_blocked
-        },
-        { status: 401, headers: corsHeaders }
-      );
-    }
-    
-    // Update PIN using shared utility
+    // Update PIN using shared utility (validates current_pin internally)
     const result = await updateMerchantPin(supabase, merchant.merchant_id, current_pin, new_pin, ipAddress, userAgent);
     
     return Response.json(
@@ -576,63 +547,14 @@ async function handleRevokePin(request: Request, supabase: any, userProviderId: 
     const requestData: RevokePinRequest = await request.json();
     const { pin_code } = requestData;
     
-    // Get merchant ID and status
-    const merchantQuery = supabase
-      .from('merchants')
-      .select('merchant_id, status');
+    // Get merchant and check status
+    const { merchant, error } = await getMerchantWithStatusCheck(supabase, userProviderId, isPrivyAuth);
+    if (error) return error;
     
-    const { data: merchant, error: merchantError } = isPrivyAuth
-      ? await merchantQuery.eq('privy_id', userProviderId).single()
-      : await merchantQuery.eq('dynamic_id', userProviderId).single();
-      
-    if (merchantError || !merchant) {
-      return Response.json(
-        { success: false, error: 'Merchant not found' },
-        { status: 404, headers: corsHeaders }
-      );
-    }
-    
-    // Check merchant status
-    if (merchant.status === 'PIN_BLOCKED' || merchant.status === 'INACTIVE') {
-      return createBlockedResponse();
-    }
-    
-    // PIN validation middleware for PIN revoke operations (required)
-    const pinCodeFromHeader = extractPinFromHeaders(request);
-    if (!pinCodeFromHeader) {
-      return Response.json(
-        { 
-          success: false,
-          error: 'PIN code is required for PIN revoke operations',
-          code: 'PIN_REQUIRED'
-        },
-        { status: 400, headers: corsHeaders }
-      );
-    }
-    
+    // Extract client info
     const { ipAddress, userAgent } = extractClientInfo(request);
     
-    const pinValidation = await requirePinValidation({
-      supabase,
-      merchantId: merchant.merchant_id,
-      pinCode: pinCodeFromHeader,
-      ipAddress,
-      userAgent
-    });
-    
-    if (!pinValidation.success) {
-      return Response.json(
-        { 
-          success: false,
-          error: pinValidation.error,
-          attempts_remaining: pinValidation.result?.attempts_remaining,
-          is_blocked: pinValidation.result?.is_blocked
-        },
-        { status: 401, headers: corsHeaders }
-      );
-    }
-    
-    // Revoke PIN using shared utility
+    // Revoke PIN using shared utility (validates pin_code internally)
     const result = await revokeMerchantPin(supabase, merchant.merchant_id, pin_code, ipAddress, userAgent);
     
     return Response.json(
@@ -653,26 +575,9 @@ async function handleValidatePin(request: Request, supabase: any, userProviderId
     const requestData: ValidatePinRequest = await request.json();
     const { pin_code } = requestData;
     
-    // Get merchant ID and status
-    const merchantQuery = supabase
-      .from('merchants')
-      .select('merchant_id, status');
-    
-    const { data: merchant, error: merchantError } = isPrivyAuth
-      ? await merchantQuery.eq('privy_id', userProviderId).single()
-      : await merchantQuery.eq('dynamic_id', userProviderId).single();
-      
-    if (merchantError || !merchant) {
-      return Response.json(
-        { success: false, error: 'Merchant not found' },
-        { status: 404, headers: corsHeaders }
-      );
-    }
-    
-    // Check merchant status
-    if (merchant.status === 'PIN_BLOCKED' || merchant.status === 'INACTIVE') {
-      return createBlockedResponse();
-    }
+    // Get merchant (no status blocking for validation endpoint - allows checking if blocked)
+    const { merchant, error } = await getMerchantWithStatusCheck(supabase, userProviderId, isPrivyAuth, false);
+    if (error) return error;
     
     // Extract client info
     const { ipAddress, userAgent } = extractClientInfo(request);
@@ -700,27 +605,11 @@ async function handleValidatePin(request: Request, supabase: any, userProviderId
 // Check merchant status handler
 async function handleCheckStatus(_request: Request, supabase: any, userProviderId: string, isPrivyAuth: boolean) {
   try {
-    const merchantQuery = supabase
-      .from('merchants')
-      .select('merchant_id, status');
+    // Get merchant (no status blocking - allows checking status even if blocked)
+    const { merchant, error } = await getMerchantWithStatusCheck(supabase, userProviderId, isPrivyAuth, false);
+    if (error) return error;
     
-    const { data: merchant, error: merchantError } = isPrivyAuth
-      ? await merchantQuery.eq('privy_id', userProviderId).single()
-      : await merchantQuery.eq('dynamic_id', userProviderId).single();
-      
-    if (merchantError || !merchant) {
-      return Response.json(
-        { success: false, error: 'Merchant not found' },
-        { status: 404, headers: corsHeaders }
-      );
-    }
-    
-    // Check merchant status
-    if (merchant.status === 'PIN_BLOCKED' || merchant.status === 'INACTIVE') {
-      return createBlockedResponse();
-    }
-    
-    // Get merchant status data directly
+    // Get merchant status data
     const { data: merchantStatus, error: statusError } = await supabase
       .from('merchants')
       .select('status, pin_code_hash, pin_code_attempts, pin_code_blocked_at')

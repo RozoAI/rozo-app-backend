@@ -5,12 +5,12 @@
 // Setup type definitions for built-in Supabase Runtime APIs
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
-import { getDynamicIdFromJWT } from '../../_shared/utils.ts';
-import {
+import { 
+  getDynamicIdFromJWT,
   extractBearerToken,
   verifyDynamicJWT,
   verifyPrivyJWT,
-} from "./utils.ts";
+} from '../../_shared/utils.ts';
 import { 
   requirePinValidation, 
   extractPinFromHeaders,
