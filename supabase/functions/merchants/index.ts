@@ -179,20 +179,7 @@ async function handleGet(
   try {
     const merchantQuery = supabase
       .from("merchants")
-      .select(`
-        merchant_id,
-        dynamic_id,
-        privy_id,
-        email,
-        display_name,
-        wallet_address,
-        logo_url,
-        default_token_id,
-        status,
-        pin_code_hash,
-        created_at,
-        updated_at
-      `);
+      .select('*')
 
     // Use appropriate column based on auth provider
     const { data, error } = isPrivyAuth
@@ -219,21 +206,11 @@ async function handleGet(
       );
     }
 
-    // Create safe profile object without sensitive PIN fields
-    const safeProfile = {
-      merchant_id: data.merchant_id,
-      dynamic_id: data.dynamic_id,
-      privy_id: data.privy_id,
-      email: data.email,
-      display_name: data.display_name,
-      wallet_address: data.wallet_address,
-      logo_url: data.logo_url,
-      default_token_id: data.default_token_id,
-      status: data.status,
-      has_pin: !!data.pin_code_hash, // Only expose boolean, not the actual hash
-      created_at: data.created_at,
-      updated_at: data.updated_at,
-    };
+    // Create safe profile object by excluding PIN-related fields
+    const { pin_code_hash, pin_code_attempts, pin_code_blocked_at, pin_code_last_attempt_at, ...safeProfile } = data;
+    
+    // Add computed has_pin field for convenience
+    safeProfile.has_pin = !!data.pin_code_hash;
 
     return Response.json(
       {
