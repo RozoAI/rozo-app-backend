@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createDaimoPaymentLink } from "../../_shared/daimo-pay.ts";
+import { currencyCache } from "../../_shared/currency-cache.ts";
 import { 
   generateOrderNumber,
   extractBearerToken,
@@ -33,6 +34,8 @@ interface Order extends OrderData {
   created_at?: string;
   updated_at?: string;
   status?: string;
+  expired_at?: string;
+  payment_data?: unknown;
 }
 
 interface CreateOrderRequest {
@@ -42,19 +45,40 @@ interface CreateOrderRequest {
   redirect_uri?: string;
 }
 
-// Validate merchant and create order
-async function createOrder(
+interface MerchantData {
+  merchant_id: string;
+  wallet_address: string;
+  status: string;
+  tokens: {
+    chain_id: string;
+    token_address: string;
+  };
+}
+
+interface ValidationResult {
+  success: boolean;
+  error?: string;
+  code?: string;
+}
+
+interface CurrencyConversionResult {
+  success: boolean;
+  usdAmount?: number;
+  error?: string;
+}
+
+/**
+ * Validate merchant exists and get merchant data
+ */
+async function validateMerchant(
   supabase: any,
   userProviderId: string,
   isPrivyAuth: boolean,
-  orderData: CreateOrderRequest,
-) {
+): Promise<{ success: boolean; merchant?: MerchantData; error?: string; code?: string }> {
   try {
-    // First, verify if merchant exists and get token info
     const merchantQuery = supabase
       .from("merchants")
-      .select(
-        `
+      .select(`
         merchant_id,
         dynamic_id,
         privy_id,
@@ -62,10 +86,8 @@ async function createOrder(
         status,
         tokens!inner(chain_id, token_address),
         logo_url
-      `,
-      );
+      `);
 
-    // Use appropriate column based on auth provider
     const { data: merchant, error: merchantError } = isPrivyAuth
       ? await merchantQuery.eq("privy_id", userProviderId).single()
       : await merchantQuery.eq("dynamic_id", userProviderId).single();
@@ -77,7 +99,7 @@ async function createOrder(
       };
     }
 
-    // Check merchant status (PIN_BLOCKED or INACTIVE)
+    // Check merchant status
     if (merchant.status === 'PIN_BLOCKED') {
       return {
         success: false,
@@ -94,34 +116,57 @@ async function createOrder(
       };
     }
 
-    // Skip currency conversion if currency is USD
-    let required_amount_usd = orderData.display_amount;
-    if (orderData.display_currency !== "USD") {
-      const { data: currency, error } = await supabase
-        .from("currencies")
-        .select("usd_price")
-        .eq("currency_id", orderData.display_currency)
-        .single();
+    return { success: true, merchant };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
 
-      if (error || !currency) {
-        return {
-          success: false,
-          error: "Currency not found",
-        };
-      }
-      required_amount_usd = currency.usd_price * orderData.display_amount;
+/**
+ * Convert currency amount to USD using cached rates
+ */
+async function convertCurrencyToUSD(
+  supabase: any,
+  currency: string,
+  amount: number,
+): Promise<CurrencyConversionResult> {
+  try {
+    const result = await currencyCache.convertToUSD(supabase, currency, amount);
+    
+    if (!result.success || result.usdAmount === undefined) {
+      return { success: false, error: result.error };
     }
 
-    if (required_amount_usd < 0.1) {
+    // Validate minimum amount
+    if (result.usdAmount < 0.1) {
       return {
         success: false,
-        error: "Cannot create order with amount less than 0.1",
+        error: "Cannot create order with amount less than 0.1 USD",
       };
     }
 
-    const formattedUsdAmount = parseFloat(required_amount_usd.toFixed(2));
-    const orderNumber = generateOrderNumber();
+    return { success: true, usdAmount: parseFloat(result.usdAmount.toFixed(2)) };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Currency conversion failed",
+    };
+  }
+}
 
+/**
+ * Create payment link and validate response
+ */
+async function createPaymentLink(
+  merchant: MerchantData,
+  orderData: CreateOrderRequest,
+  orderNumber: string,
+  formattedUsdAmount: number,
+): Promise<{ success: boolean; paymentDetail?: any; error?: string }> {
+  try {
     const paymentResponse = await createDaimoPaymentLink({
       merchant,
       intent: INTENT_TITLE,
@@ -138,22 +183,46 @@ async function createOrder(
         error: paymentResponse.error || "Payment detail is missing",
       };
     }
-    // Create the order with required_token from merchant's default token
 
-    // deno-lint-ignore no-unused-vars
+    return { success: true, paymentDetail: paymentResponse.paymentDetail };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Payment link creation failed",
+    };
+  }
+}
+
+/**
+ * Insert order record into database
+ */
+async function insertOrderRecord(
+  supabase: any,
+  orderData: CreateOrderRequest,
+  merchant: MerchantData,
+  orderNumber: string,
+  paymentDetail: any,
+  formattedUsdAmount: number,
+): Promise<{ success: boolean; order?: any; error?: string }> {
+  try {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes
+
     const { redirect_uri, ...rest } = orderData;
     const orderToInsert: Order = {
       ...rest,
       number: orderNumber,
       merchant_id: merchant.merchant_id,
-      payment_id: paymentResponse.paymentDetail.id,
+      payment_id: paymentDetail.id,
       merchant_chain_id: merchant.tokens.chain_id,
       merchant_address: merchant.wallet_address,
       required_amount_usd: formattedUsdAmount,
       required_token: merchant.tokens.token_address,
       status: "PENDING",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+      expired_at: expiresAt.toISOString(),
+      payment_data: paymentDetail,
     };
 
     const { data: order, error: orderError } = await supabase
@@ -169,13 +238,95 @@ async function createOrder(
       };
     }
 
+    return { success: true, order };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Order creation failed",
+    };
+  }
+}
+
+// Validate merchant and create order
+async function createOrder(
+  supabase: any,
+  userProviderId: string,
+  isPrivyAuth: boolean,
+  orderData: CreateOrderRequest,
+) {
+  const startTime = Date.now();
+  
+  try {
+    // Step 1: Validate merchant (parallel with currency conversion)
+    const merchantResult = await validateMerchant(supabase, userProviderId, isPrivyAuth);
+    if (!merchantResult.success) {
+      return {
+        success: false,
+        error: merchantResult.error,
+        code: merchantResult.code,
+      };
+    }
+
+    // Step 2: Convert currency to USD using cache
+    const conversionResult = await convertCurrencyToUSD(
+      supabase,
+      orderData.display_currency,
+      orderData.display_amount,
+    );
+    if (!conversionResult.success) {
+      return {
+        success: false,
+        error: conversionResult.error,
+      };
+    }
+
+    // Step 3: Generate order number
+    const orderNumber = generateOrderNumber();
+
+    // Step 4: Create payment link
+    const paymentResult = await createPaymentLink(
+      merchantResult.merchant!,
+      orderData,
+      orderNumber,
+      conversionResult.usdAmount!,
+    );
+    if (!paymentResult.success) {
+      return {
+        success: false,
+        error: paymentResult.error,
+      };
+    }
+
+    // Step 5: Insert order record
+    const insertResult = await insertOrderRecord(
+      supabase,
+      orderData,
+      merchantResult.merchant!,
+      orderNumber,
+      paymentResult.paymentDetail!,
+      conversionResult.usdAmount!,
+    );
+    if (!insertResult.success) {
+      return {
+        success: false,
+        error: insertResult.error,
+      };
+    }
+
+    // Log performance metrics
+    const processingTime = Date.now() - startTime;
+    console.log(`Order creation completed in ${processingTime}ms for order ${orderNumber}`);
+
     return {
       success: true,
-      paymentDetail: paymentResponse.paymentDetail,
-      order_id: order.order_id,
-      order_number: order.number,
+      paymentDetail: paymentResult.paymentDetail,
+      order_id: insertResult.order!.order_id,
+      order_number: insertResult.order!.number,
     };
   } catch (error) {
+    const processingTime = Date.now() - startTime;
+    console.error(`Order creation failed after ${processingTime}ms:`, error);
+    
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
@@ -377,13 +528,13 @@ async function handleGetAllOrders(
     }
 
     // Validate status parameter
-    const validStatuses = ["pending", "completed", "failed", "discrepancy"];
+    const validStatuses = ["pending", "completed", "failed", "expired", "discrepancy"];
     if (statusParam && !validStatuses.includes(statusParam.toLowerCase())) {
       return Response.json(
         {
           success: false,
           error:
-            "Status must be one of: pending, completed, failed, discrepancy",
+            "Status must be one of: pending, completed, failed, expired, discrepancy",
         },
         {
           status: 400,

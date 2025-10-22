@@ -149,7 +149,6 @@ export async function createDaimoPaymentLink({
     }
 
     const paymentDetail = await response.json() as DaimoPayment;
-    console.log({paymentDetail});
     return {
       success: true,
       paymentDetail,
