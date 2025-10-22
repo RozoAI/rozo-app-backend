@@ -15,7 +15,7 @@ async function handleGetAllDeposits(c: Context) {
 
     const merchantQuery = supabase
       .from("merchants")
-      .select(`merchant_id`);
+      .select(`merchant_id, status`);
 
     // Use appropriate column based on auth provider
     const { data: merchant, error: merchantError } = isPrivyAuth
@@ -26,6 +26,29 @@ async function handleGetAllDeposits(c: Context) {
       return c.json(
         { success: false, error: merchantError.message },
         404,
+      );
+    }
+
+    // Check merchant status (PIN_BLOCKED or INACTIVE)
+    if (merchant.status === 'PIN_BLOCKED') {
+      return c.json(
+        { 
+          success: false,
+          error: 'Account blocked due to PIN security violations',
+          code: 'PIN_BLOCKED'
+        },
+        403,
+      );
+    }
+
+    if (merchant.status === 'INACTIVE') {
+      return c.json(
+        { 
+          success: false,
+          error: 'Account is inactive',
+          code: 'INACTIVE'
+        },
+        403,
       );
     }
 
@@ -146,7 +169,7 @@ async function handleGetSingleDeposit(
 
     const merchantQuery = supabase
       .from("merchants")
-      .select(`merchant_id`);
+      .select(`merchant_id, status`);
 
     // Use appropriate column based on auth provider
     const { data: merchant, error: merchantError } = isPrivyAuth
@@ -157,6 +180,29 @@ async function handleGetSingleDeposit(
       return c.json(
         { success: false, error: merchantError.message },
         404,
+      );
+    }
+
+    // Check merchant status (PIN_BLOCKED or INACTIVE)
+    if (merchant.status === 'PIN_BLOCKED') {
+      return c.json(
+        { 
+          success: false,
+          error: 'Account blocked due to PIN security violations',
+          code: 'PIN_BLOCKED'
+        },
+        403,
+      );
+    }
+
+    if (merchant.status === 'INACTIVE') {
+      return c.json(
+        { 
+          success: false,
+          error: 'Account is inactive',
+          code: 'INACTIVE'
+        },
+        403,
       );
     }
 
@@ -199,6 +245,47 @@ async function handleCreateDeposit(c: Context) {
     const dynamicId = c.get("dynamicId");
     const supabase = c.get("supabase");
     const isPrivyAuth = c.get("isPrivyAuth");
+
+    const merchantQuery = supabase
+    .from('merchants')
+    .select('merchant_id, status');
+  
+  const { data: merchant, error: merchantError } = isPrivyAuth
+    ? await merchantQuery.eq('privy_id', dynamicId).single()
+    : await merchantQuery.eq('dynamic_id', dynamicId).single();
+    
+  if (merchantError || !merchant) {
+    return {
+      merchant: null,
+      error: Response.json(
+        { success: false, error: 'Merchant not found' },
+        { status: 404, headers: corsHeaders }
+      )
+    };
+  }
+
+    // Check merchant status (PIN_BLOCKED or INACTIVE)
+    if (merchant.status === 'PIN_BLOCKED') {
+      return c.json(
+        { 
+          success: false,
+          error: 'Account blocked due to PIN security violations',
+          code: 'PIN_BLOCKED'
+        },
+        403,
+      );
+    }
+
+    if (merchant.status === 'INACTIVE') {
+      return c.json(
+        { 
+          success: false,
+          error: 'Account is inactive',
+          code: 'INACTIVE'
+        },
+        403,
+      );
+    }
 
     const depositData: CreateDepositRequest = await c.req.json();
 
