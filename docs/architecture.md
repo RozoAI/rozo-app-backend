@@ -71,7 +71,8 @@ This document covers the technical architecture, project structure, and core fun
 │   │   ├── 20250914172526_remote_schema.sql
 │   │   ├── 20250914172728_add_privy_id.sql # Privy integration
 │   │   ├── 20251020111110_add_merchant_pincode_status.sql # PIN code & status
-│   │   └── 20251022120000_add_orders_expired_payment_data.sql # Order enhancements
+│   │   ├── 20251022120000_add_orders_expired_payment_data.sql # Order enhancements
+│   │   └── 20251023000000_add_preferred_token_id_to_orders.sql # Preferred token system
 │   └── seed.sql           # Initial data for development
 ```
 
@@ -88,15 +89,22 @@ Core backend logic is handled by these Supabase Edge Functions:
 
 ### 2. `/orders`
 
-- **Manages**: Order lifecycle (creation, retrieval, status tracking)
+- **Manages**: Order lifecycle (creation, retrieval, status tracking, payment regeneration)
 - **Auth**: Dual JWT support (Dynamic or Privy)
 - **Features**:
   - Order creation with cached currency conversion
-  - Automatic expiration (5 minutes from creation)
+  - Preferred token system (user choice vs merchant default)
+  - Payment regeneration with optional token changes
+  - Automatic expiration (10 minutes from creation)
   - Pagination and status filtering
   - Performance monitoring and metrics
-- **Database Fields**: `expired_at`, `payment_data` (jsonb)
-- **Integrates with**: Daimo Pay for payment processing, currency cache
+- **Database Fields**: `expired_at`, `payment_data` (jsonb), `preferred_token_id`
+- **Endpoints**:
+  - `POST /orders` - Create new order
+  - `GET /orders` - List orders with pagination
+  - `GET /orders/{id}` - Get single order
+  - `POST /orders/{id}/regenerate-payment` - Regenerate payment link
+- **Integrates with**: Daimo Pay for payment processing, currency cache, tokens table
 
 ### 3. `/deposits`
 
@@ -126,7 +134,7 @@ Core backend logic is handled by these Supabase Edge Functions:
 - **Manages**: Automatic processing of expired orders
 - **Schedule**: Every 5 minutes (`*/5 * * * *`)
 - **Features**:
-  - Updates expired PENDING orders to FAILED status
+  - Updates expired PENDING orders to EXPIRED status
   - Handles orders with and without `expired_at` field
   - Performance monitoring and statistics
   - Merchant notification logging

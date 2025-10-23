@@ -31,6 +31,7 @@ interface OrderData {
 
 interface Order extends OrderData {
   required_token?: string;
+  preferred_token_id?: string;
   created_at?: string;
   updated_at?: string;
   status?: string;
@@ -43,16 +44,23 @@ interface CreateOrderRequest {
   display_amount: number;
   description?: string;
   redirect_uri?: string;
+  preferred_token_id?: string;
+}
+
+interface TokenData {
+  token_id: string;
+  token_name: string;
+  token_address: string;
+  chain_id: string;
+  chain_name: string;
 }
 
 interface MerchantData {
   merchant_id: string;
   wallet_address: string;
   status: string;
-  tokens: {
-    chain_id: string;
-    token_address: string;
-  };
+  default_token_id: string;
+  logo_url?: string;
 }
 
 interface ValidationResult {
@@ -84,7 +92,7 @@ async function validateMerchant(
         privy_id,
         wallet_address,
         status,
-        tokens!inner(chain_id, token_address),
+        default_token_id,
         logo_url
       `);
 
@@ -95,7 +103,7 @@ async function validateMerchant(
     if (merchantError || !merchant) {
       return {
         success: false,
-        error: "Merchant not found or has no default token configured",
+        error: "Merchant not found",
       };
     }
 
@@ -121,6 +129,45 @@ async function validateMerchant(
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+/**
+ * Resolve preferred token (user's choice or merchant's default)
+ */
+async function resolvePreferredToken(
+  supabase: any,
+  merchantDefaultTokenId: string,
+  userPreferredTokenId?: string,
+): Promise<{ success: boolean; token?: TokenData; error?: string }> {
+  try {
+    const tokenIdToUse = userPreferredTokenId || merchantDefaultTokenId;
+
+    // Fetch token details
+    const { data: token, error: tokenError } = await supabase
+      .from("tokens")
+      .select("token_id, token_name, token_address, chain_id, chain_name")
+      .eq("token_id", tokenIdToUse)
+      .single();
+
+    if (tokenError || !token) {
+      return {
+        success: false,
+        error: userPreferredTokenId
+          ? `Invalid preferred_token_id: Token not found`
+          : `Merchant's default token not found`,
+      };
+    }
+
+    return {
+      success: true,
+      token,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Token resolution failed",
     };
   }
 }
@@ -165,6 +212,8 @@ async function createPaymentLink(
   orderData: CreateOrderRequest,
   orderNumber: string,
   formattedUsdAmount: number,
+  destinationToken: TokenData,
+  preferredToken: TokenData,
 ): Promise<{ success: boolean; paymentDetail?: any; error?: string }> {
   try {
     const paymentResponse = await createDaimoPaymentLink({
@@ -174,6 +223,8 @@ async function createPaymentLink(
       amountUnits: formattedUsdAmount.toString(),
       description: orderData.description,
       redirect_uri: orderData.redirect_uri,
+      destinationToken,
+      preferredToken,
       isOrder: true,
     });
 
@@ -194,6 +245,139 @@ async function createPaymentLink(
 }
 
 /**
+ * Regenerate payment link for existing PENDING order
+ */
+async function regeneratePaymentLink(
+  supabase: any,
+  orderId: string,
+  userProviderId: string,
+  isPrivyAuth: boolean,
+  newPreferredTokenId?: string,
+): Promise<{ success: boolean; paymentDetail?: any; error?: string }> {
+  try {
+    // Step 1: Validate merchant and get order
+    const merchantResult = await validateMerchant(supabase, userProviderId, isPrivyAuth);
+    if (!merchantResult.success) {
+      return {
+        success: false,
+        error: merchantResult.error,
+        code: merchantResult.code,
+      };
+    }
+
+    // Step 2: Get order details
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("order_id", orderId)
+      .eq("merchant_id", merchantResult.merchant!.merchant_id)
+      .single();
+
+    if (orderError || !order) {
+      return {
+        success: false,
+        error: "Order not found or does not belong to merchant",
+      };
+    }
+
+    // Step 3: Validate order status (only allow regeneration for PENDING orders)
+    if (order.status !== "PENDING") {
+      return {
+        success: false,
+        error: `Cannot regenerate payment for order with status: ${order.status}. Only PENDING orders can regenerate payment.`,
+      };
+    }
+
+    // Step 4: Determine which preferred token to use (new one from user or original from order)
+    const preferredTokenIdToUse = newPreferredTokenId !== undefined 
+      ? newPreferredTokenId 
+      : order.preferred_token_id;
+
+    // Step 5: Resolve tokens (destination from merchant default, preferred from user choice or order)
+    const destinationTokenResult = await resolvePreferredToken(
+      supabase,
+      merchantResult.merchant!.default_token_id,
+    );
+
+    if (!destinationTokenResult.success) {
+      return {
+        success: false,
+        error: destinationTokenResult.error,
+      };
+    }
+
+    const preferredTokenResult = await resolvePreferredToken(
+      supabase,
+      merchantResult.merchant!.default_token_id,
+      preferredTokenIdToUse,
+    );
+
+    if (!preferredTokenResult.success) {
+      return {
+        success: false,
+        error: preferredTokenResult.error,
+      };
+    }
+
+    // Step 6: Create new payment link using existing order data
+    const paymentResult = await createPaymentLink(
+      merchantResult.merchant!,
+      {
+        display_currency: order.display_currency,
+        display_amount: order.display_amount,
+        description: order.description,
+        redirect_uri: order.redirect_uri,
+        preferred_token_id: preferredTokenIdToUse,
+      },
+      order.number,
+      order.required_amount_usd,
+      destinationTokenResult.token!,
+      preferredTokenResult.token!,
+    );
+
+    if (!paymentResult.success) {
+      return {
+        success: false,
+        error: paymentResult.error,
+      };
+    }
+
+    // Step 7: Update order with new payment data, preferred token, and reset expiration
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes
+
+    const { error: updateError } = await supabase
+      .from("orders")
+      .update({
+        payment_id: paymentResult.paymentDetail!.id,
+        payment_data: paymentResult.paymentDetail,
+        preferred_token_id: preferredTokenIdToUse, // Update preferred token if changed
+        status: "PENDING", // Reset to PENDING
+        expired_at: expiresAt.toISOString(),
+        updated_at: now.toISOString(),
+      })
+      .eq("order_id", orderId);
+
+    if (updateError) {
+      return {
+        success: false,
+        error: updateError.message,
+      };
+    }
+
+    return {
+      success: true,
+      paymentDetail: paymentResult.paymentDetail,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Payment regeneration failed",
+    };
+  }
+}
+
+/**
  * Insert order record into database
  */
 async function insertOrderRecord(
@@ -203,21 +387,23 @@ async function insertOrderRecord(
   orderNumber: string,
   paymentDetail: any,
   formattedUsdAmount: number,
+  destinationToken: TokenData,
 ): Promise<{ success: boolean; order?: any; error?: string }> {
   try {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes
 
-    const { redirect_uri, ...rest } = orderData;
+    const { redirect_uri, preferred_token_id, ...rest } = orderData;
     const orderToInsert: Order = {
       ...rest,
       number: orderNumber,
       merchant_id: merchant.merchant_id,
       payment_id: paymentDetail.id,
-      merchant_chain_id: merchant.tokens.chain_id,
+      merchant_chain_id: destinationToken.chain_id,
       merchant_address: merchant.wallet_address,
       required_amount_usd: formattedUsdAmount,
-      required_token: merchant.tokens.token_address,
+      required_token: destinationToken.token_address,
+      preferred_token_id: preferred_token_id,
       status: "PENDING",
       created_at: now.toISOString(),
       updated_at: now.toISOString(),
@@ -280,15 +466,43 @@ async function createOrder(
       };
     }
 
-    // Step 3: Generate order number
+    // Step 3: Resolve tokens (destination from merchant default, preferred from user or merchant default)
+    const destinationTokenResult = await resolvePreferredToken(
+      supabase,
+      merchantResult.merchant!.default_token_id,
+    );
+
+    if (!destinationTokenResult.success) {
+      return {
+        success: false,
+        error: destinationTokenResult.error,
+      };
+    }
+
+    const preferredTokenResult = await resolvePreferredToken(
+      supabase,
+      merchantResult.merchant!.default_token_id,
+      orderData.preferred_token_id,
+    );
+
+    if (!preferredTokenResult.success) {
+      return {
+        success: false,
+        error: preferredTokenResult.error,
+      };
+    }
+
+    // Step 4: Generate order number
     const orderNumber = generateOrderNumber();
 
-    // Step 4: Create payment link
+    // Step 5: Create payment link
     const paymentResult = await createPaymentLink(
       merchantResult.merchant!,
       orderData,
       orderNumber,
       conversionResult.usdAmount!,
+      destinationTokenResult.token!,
+      preferredTokenResult.token!,
     );
     if (!paymentResult.success) {
       return {
@@ -297,7 +511,7 @@ async function createOrder(
       };
     }
 
-    // Step 5: Insert order record
+    // Step 6: Insert order record
     const insertResult = await insertOrderRecord(
       supabase,
       orderData,
@@ -305,6 +519,7 @@ async function createOrder(
       orderNumber,
       paymentResult.paymentDetail!,
       conversionResult.usdAmount!,
+      destinationTokenResult.token!,
     );
     if (!insertResult.success) {
       return {
@@ -613,6 +828,80 @@ async function handleGetAllOrders(
   }
 }
 
+async function handleRegeneratePayment(
+  request: Request,
+  supabase: any,
+  orderId: string,
+  userProviderId: string,
+  isPrivyAuth: boolean,
+) {
+  try {
+    // Parse request body to get optional preferred_token_id
+    let newPreferredTokenId: string | undefined;
+    try {
+      const body = await request.json();
+      newPreferredTokenId = body.preferred_token_id;
+    } catch {
+      // Body is optional, ignore parse errors
+      newPreferredTokenId = undefined;
+    }
+
+    const result = await regeneratePaymentLink(
+      supabase,
+      orderId,
+      userProviderId,
+      isPrivyAuth,
+      newPreferredTokenId,
+    );
+
+    if (!result.success || !result.paymentDetail) {
+      return Response.json(
+        { success: false, error: result.error || "Payment regeneration failed" },
+        {
+          status: 400,
+          headers: corsHeaders,
+        },
+      );
+    }
+
+    const intentPayUrl = Deno.env.get("ROZO_PAY_URL");
+
+    if (!intentPayUrl) {
+      return Response.json(
+        { success: false, error: "ROZO_PAY_URL is not set" },
+        { status: 500, headers: corsHeaders },
+      );
+    }
+
+    return Response.json(
+      {
+        success: true,
+        qrcode: `${intentPayUrl}${result.paymentDetail.id}`,
+        order_id: orderId,
+        message: "Payment link regenerated successfully",
+        paymentDetail: result.paymentDetail,
+      },
+      {
+        status: 200,
+        headers: corsHeaders,
+      },
+    );
+  } catch (error) {
+    return Response.json(
+      {
+        success: false,
+        error: `Server error: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+      },
+      {
+        status: 500,
+        headers: corsHeaders,
+      },
+    );
+  }
+}
+
 async function handleCreateOrder(
   request: Request,
   supabase: any,
@@ -809,6 +1098,23 @@ serve(async (req) => {
       return await handleCreateOrder(
         req,
         supabase,
+        userProviderId,
+        isPrivyAuth,
+      );
+    }
+
+    // Route: v1/orders/{order_id}/regenerate-payment (POST) - Regenerate payment link
+    if (
+      req.method === "POST" &&
+      pathSegments.length === 3 &&
+      pathSegments[0] === "orders" &&
+      pathSegments[2] === "regenerate-payment"
+    ) {
+      const orderId = pathSegments[1];
+      return await handleRegeneratePayment(
+        req,
+        supabase,
+        orderId,
         userProviderId,
         isPrivyAuth,
       );

@@ -22,28 +22,6 @@ ALTER TABLE "public"."orders"
 ALTER TABLE "public"."orders"
   ADD COLUMN IF NOT EXISTS "payment_data" jsonb;
 
--- Step 3: Backfill expired_at for existing PENDING orders to created_at + 5 minutes
--- This ensures existing orders without expiration dates get proper expiration
-UPDATE "public"."orders"
-SET "expired_at" = ("created_at" + interval '5 minutes')
-WHERE "expired_at" IS NULL 
-  AND "status" = 'PENDING';
-
--- Step 4: Update existing FAILED orders that were expired by the cron job
--- We can identify them by checking if callback_payload contains "Order expired"
-UPDATE "public"."orders"
-SET "status" = 'EXPIRED'
-WHERE "status" = 'FAILED'
-  AND "callback_payload"->>'reason' = 'Order expired'
-  AND "callback_payload"->>'processed_by' = 'expired-orders-cron';
-
--- Step 5: Update existing FAILED deposits that were expired by the cron job
-UPDATE "public"."deposits"
-SET "status" = 'EXPIRED'
-WHERE "status" = 'FAILED'
-  AND "callback_payload"->>'reason' = 'Order expired'
-  AND "callback_payload"->>'processed_by' = 'expired-orders-cron';
-
 -- Step 6: Create indexes to improve queries by expiration and status
 CREATE INDEX IF NOT EXISTS "orders_expired_at_idx" ON "public"."orders" USING "btree" ("expired_at");
 CREATE INDEX IF NOT EXISTS "orders_status_expired_idx" ON "public"."orders" USING "btree" ("status", "expired_at");
