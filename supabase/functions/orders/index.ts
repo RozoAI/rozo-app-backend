@@ -368,6 +368,7 @@ async function regeneratePaymentLink(
     return {
       success: true,
       paymentDetail: paymentResult.paymentDetail,
+      expired_at: expiresAt.toISOString(),
     };
   } catch (error) {
     return {
@@ -537,6 +538,7 @@ async function createOrder(
       paymentDetail: paymentResult.paymentDetail,
       order_id: insertResult.order!.order_id,
       order_number: insertResult.order!.number,
+      expired_at: insertResult.order!.expired_at,
     };
   } catch (error) {
     const processingTime = Date.now() - startTime;
@@ -878,6 +880,7 @@ async function handleRegeneratePayment(
         success: true,
         qrcode: `${intentPayUrl}${result.paymentDetail.id}`,
         order_id: orderId,
+        expired_at: result.expired_at,
         message: "Payment link regenerated successfully",
         paymentDetail: result.paymentDetail,
       },
@@ -972,11 +975,14 @@ async function handleCreateOrder(
     return Response.json(
       {
         success: true,
-        qrcode: `${intentPayUrl}${result.paymentDetail.id}`,
-        order_id: result.order_id,
-        order_number: result.order_number,
         message: "Order created successfully",
-        result: result,
+        data: {
+          payment_detail: result.paymentDetail,
+          order_id: result.order_id,
+          order_number: result.order_number,
+          expired_at: result.expired_at,
+          qrcode: `${intentPayUrl}${result.paymentDetail.id}`,
+        },
       },
       {
         status: 201,
@@ -1093,16 +1099,6 @@ serve(async (req) => {
     const url = new URL(req.url);
     const pathSegments = url.pathname.split("/").filter(Boolean);
 
-    // Route: v1/orders (POST) - Create order (no JWT required)
-    if (req.method === "POST" && pathSegments[0] === "orders") {
-      return await handleCreateOrder(
-        req,
-        supabase,
-        userProviderId,
-        isPrivyAuth,
-      );
-    }
-
     // Route: v1/orders/{order_id}/regenerate-payment (POST) - Regenerate payment link
     if (
       req.method === "POST" &&
@@ -1131,6 +1127,17 @@ serve(async (req) => {
         req,
         supabase,
         orderId,
+        userProviderId,
+        isPrivyAuth,
+      );
+    }
+
+
+    // Route: v1/orders (POST) - Create order (no JWT required)
+    if (req.method === "POST" && pathSegments[0] === "orders") {
+      return await handleCreateOrder(
+        req,
+        supabase,
         userProviderId,
         isPrivyAuth,
       );

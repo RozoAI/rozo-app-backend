@@ -29,46 +29,18 @@ async function handleExpiredOrders(supabase: any): Promise<ExpiredOrderStats> {
   };
 
   try {
-    // Find orders that are expired and still in PENDING status
-    // Handle both orders with expired_at and orders without (fallback to created_at + 5min)
     const now = new Date().toISOString();
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    
-    const { data: expiredOrders, error: fetchError } = await supabase
-      .from("orders")
-      .select("order_id, number, merchant_id, created_at, expired_at")
-      .eq("status", "PENDING")
-      .or(`expired_at.lt.${now},and(expired_at.is.null,created_at.lt.${fiveMinutesAgo})`);
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
 
-    if (fetchError) {
-      console.error("Error fetching expired orders:", fetchError);
-      stats.errors++;
-      return stats;
-    }
-
-    stats.totalExpired = expiredOrders?.length || 0;
-
-    if (stats.totalExpired === 0) {
-      console.log("No expired orders found");
-      return stats;
-    }
-
-    console.log(`Found ${stats.totalExpired} expired orders to process`);
-
-    // Update expired orders to EXPIRED status
+    // Update all expired orders in one query
     const { data: updatedOrders, error: updateError } = await supabase
       .from("orders")
       .update({
         status: "EXPIRED",
-        updated_at: new Date().toISOString(),
-        callback_payload: {
-          reason: "Order expired",
-          expired_at: new Date().toISOString(),
-          processed_by: "expired-orders-cron",
-        },
+        updated_at: now,
       })
       .eq("status", "PENDING")
-      .or(`expired_at.lt.${now},and(expired_at.is.null,created_at.lt.${fiveMinutesAgo})`)
+      .or(`expired_at.lt.${now},and(expired_at.is.null,created_at.lt.${tenMinutesAgo})`)
       .select("order_id, number");
 
     if (updateError) {
@@ -77,19 +49,15 @@ async function handleExpiredOrders(supabase: any): Promise<ExpiredOrderStats> {
       return stats;
     }
 
-    stats.updatedOrders = updatedOrders?.length || 0;
+    stats.totalExpired = updatedOrders?.length || 0;
+    stats.updatedOrders = stats.totalExpired;
 
-    // Log processed orders
-    if (updatedOrders && updatedOrders.length > 0) {
-      console.log(
-        `Successfully updated ${stats.updatedOrders} expired orders:`,
-        updatedOrders.map((order) => order.number).join(", ")
-      );
+    if (stats.totalExpired > 0) {
+      console.log(`Updated ${stats.totalExpired} expired orders:`, 
+        updatedOrders?.map(order => order.number).join(", "));
+    } else {
+      console.log("No expired orders found");
     }
-
-    // Optional: Send notifications to merchants about expired orders
-    // This could be implemented with Pusher or another notification service
-    await notifyMerchantsAboutExpiredOrders(supabase, updatedOrders || []);
 
   } catch (error) {
     console.error("Unexpected error in handleExpiredOrders:", error);
