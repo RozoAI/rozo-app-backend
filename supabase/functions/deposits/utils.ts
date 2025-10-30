@@ -1,5 +1,5 @@
-import { createDaimoPaymentLink } from '../../_shared/daimo-pay.ts';
-import { generateOrderNumber } from '../../_shared/utils.ts';
+import { createDaimoPaymentLink } from "../../_shared/daimo-pay.ts";
+import { generateOrderNumber, extractBearerToken } from "../../_shared/utils.ts";
 
 export interface CreateDepositRequest {
   display_amount: number;
@@ -25,45 +25,50 @@ export interface Deposit {
 
 export async function createDeposit(
   supabase: any,
-  dynamicId: string,
+  userProviderId: string,
+  isPrivyAuth: boolean,
   depositData: CreateDepositRequest,
 ) {
   try {
     // First, verify if merchant exists and get token info
-    const { data: merchant, error: merchantError } = await supabase
-      .from('merchants')
+    const merchantQuery = supabase
+      .from("merchants")
       .select(
         `
         merchant_id,
         dynamic_id,
+        privy_id,
         wallet_address,
         tokens!inner(chain_id, token_address),
         logo_url
       `,
-      )
-      .eq('dynamic_id', dynamicId)
-      .single();
+      );
+
+    // Use appropriate column based on auth provider
+    const { data: merchant, error: merchantError } = isPrivyAuth
+      ? await merchantQuery.eq("privy_id", userProviderId).single()
+      : await merchantQuery.eq("dynamic_id", userProviderId).single();
 
     if (merchantError || !merchant) {
       return {
         success: false,
-        error: 'Merchant not found or has no default token configured',
+        error: "Merchant not found or has no default token configured",
       };
     }
 
     // Skip currency conversion if currency is USD
     let required_amount_usd = depositData.display_amount;
-    if (depositData.display_currency !== 'USD') {
+    if (depositData.display_currency !== "USD") {
       const { data: currency, error } = await supabase
-        .from('currencies')
-        .select('usd_price')
-        .eq('currency_id', depositData.display_currency)
+        .from("currencies")
+        .select("usd_price")
+        .eq("currency_id", depositData.display_currency)
         .single();
 
       if (error || !currency) {
         return {
           success: false,
-          error: 'Currency not found',
+          error: "Currency not found",
         };
       }
       required_amount_usd = currency.usd_price * depositData.display_amount;
@@ -72,7 +77,7 @@ export async function createDeposit(
     if (required_amount_usd < 0.1) {
       return {
         success: false,
-        error: 'Cannot create deposit with amount less than 0.1',
+        error: "Cannot create deposit with amount less than 0.1",
       };
     }
 
@@ -81,16 +86,17 @@ export async function createDeposit(
 
     const paymentResponse = await createDaimoPaymentLink({
       merchant,
-      intent: 'Deposit Payment',
+      intent: "Deposit Payment",
       orderNumber: depositNumber,
       amountUnits: formattedUsdAmount.toString(),
+      redirect_uri: depositData.redirect_uri,
       isOrder: false,
     });
 
     if (!paymentResponse.success || !paymentResponse.paymentDetail) {
       return {
         success: false,
-        error: paymentResponse.error || 'Payment detail is missing',
+        error: paymentResponse.error || "Payment detail is missing",
       };
     }
 
@@ -104,14 +110,14 @@ export async function createDeposit(
       merchant_address: merchant.wallet_address,
       required_amount_usd: formattedUsdAmount,
       required_token: merchant.tokens.token_address,
-      status: 'PENDING',
+      status: "PENDING",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       number: depositNumber,
     };
 
     const { data: deposit, error: depositError } = await supabase
-      .from('deposits')
+      .from("deposits")
       .insert(depositToInsert)
       .select()
       .single();
@@ -131,23 +137,7 @@ export async function createDeposit(
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : "Unknown error",
     };
   }
-}
-
-/**
- * Extract Bearer token from Authorization header
- * @param authHeader - The Authorization header value
- * @returns The token string or null if invalid
- */
-export function extractBearerToken(authHeader: string | null): string | null {
-  if (!authHeader) return null;
-
-  const parts = authHeader.split(' ');
-  if (parts.length !== 2 || parts[0] !== 'Bearer') {
-    return null;
-  }
-
-  return parts[1];
 }

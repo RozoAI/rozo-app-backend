@@ -1,10 +1,39 @@
 import jwt, { JwtPayload } from 'npm:jsonwebtoken';
 import { JwksClient } from 'npm:jwks-rsa';
+import { PrivyClient } from "npm:@privy-io/server-auth";
 
 interface AuthResult {
   success: boolean;
   payload?: JwtPayload;
   error?: string;
+  embedded_wallet_address?: string | null;
+}
+
+interface VerifiedCredential {
+  address?: string;
+  wallet_provider: string;
+  chain?: string;
+  id: string;
+  public_identifier: string;
+  wallet_name?: string;
+  format: string;
+  signInEnabled: boolean;
+}
+
+interface DecodedJWT {
+  verified_credentials?: VerifiedCredential[];
+}
+
+/**
+ * Get embedded wallet address from JWT and get the ZeroDev address
+ */
+function getEmbeddedWalletAddress(decodedJWT: DecodedJWT): string | null {
+  const embeddedWallet = decodedJWT.verified_credentials?.find(
+    (credential: VerifiedCredential) =>
+      credential.wallet_provider === "smartContractWallet",
+  );
+
+  return embeddedWallet?.address || null;
 }
 
 /**
@@ -52,6 +81,7 @@ export async function verifyDynamicJWT(
     return {
       success: true,
       payload: decodedToken,
+      embedded_wallet_address: getEmbeddedWalletAddress(decodedToken),
     };
   } catch (error) {
     return {
@@ -103,6 +133,119 @@ export function extractBearerToken(authHeader: string | null): string | null {
   }
 
   return parts[1];
+}
+
+/**
+ * Verify Privy JWT token
+ * @param token - The JWT token to verify
+ * @param appId - Your Privy app ID
+ * @param appSecret - Your Privy app secret
+ * @returns Promise<AuthResult>
+ */
+export async function verifyPrivyJWT(
+  token: string,
+  appId: string,
+  appSecret: string,
+): Promise<AuthResult> {
+  try {
+    const privy = new PrivyClient(
+      appId as string,
+      appSecret as string,
+    );
+    const verifiedClaims = await privy.verifyAuthToken(token);
+    if (verifiedClaims.appId === appId) {
+      const user = await privy.getUserById(verifiedClaims.userId);
+
+      return {
+        success: true,
+        payload: user,
+        embedded_wallet_address: user.wallet?.address || null,
+      };
+    }
+
+    return {
+      success: false,
+      error: "Invalid Token or App ID",
+    };
+  } catch (error) {
+    console.log("PRIVY ERROR:", error);
+    return {
+      success: false,
+      error: error instanceof Error
+        ? error.message
+        : "Token verification failed",
+    };
+  }
+}
+
+/**
+ * Performs dual authentication (Privy + Dynamic)
+ * @param token - The JWT token to verify
+ * @param dynamicEnvId - Dynamic environment ID
+ * @param privyAppId - Privy app ID
+ * @param privyAppSecret - Privy app secret
+ * @returns Authentication result with user info
+ */
+export async function performDualAuth(
+  token: string,
+  dynamicEnvId: string,
+  privyAppId: string,
+  privyAppSecret: string,
+): Promise<{
+  success: boolean;
+  userProviderId: string | null;
+  userProviderWalletAddress: string | null;
+  isPrivyAuth: boolean;
+  error?: string;
+}> {
+  // Verify with Privy
+  const privy = await verifyPrivyJWT(token, privyAppId, privyAppSecret);
+
+  // Verify with Dynamic
+  const tokenVerification = await verifyDynamicJWT(token, dynamicEnvId);
+  
+  // Both failed
+  if (!tokenVerification.success && !privy.success) {
+    return {
+      success: false,
+      userProviderId: null,
+      userProviderWalletAddress: null,
+      isPrivyAuth: false,
+      error: "Invalid or expired token",
+    };
+  }
+
+  let userProviderId = null;
+  let userProviderWalletAddress = null;
+  let isPrivyAuth = false;
+
+  if (tokenVerification.success) {
+    userProviderId = tokenVerification.payload.sub;
+    userProviderWalletAddress = tokenVerification.embedded_wallet_address;
+  }
+
+  if (privy.success) {
+    userProviderId = privy.payload?.id;
+    userProviderWalletAddress = privy.embedded_wallet_address;
+    isPrivyAuth = true;
+  }
+
+  if (!userProviderWalletAddress || !userProviderId) {
+    return {
+      success: false,
+      userProviderId: null,
+      userProviderWalletAddress: null,
+      isPrivyAuth: false,
+      error: "Missing embedded wallet address or user provider id",
+    };
+  }
+
+  return {
+    success: true,
+    userProviderId,
+    userProviderWalletAddress,
+    isPrivyAuth,
+  };
 }
 
 /**

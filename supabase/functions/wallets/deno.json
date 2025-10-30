@@ -1,0 +1,13 @@
+{
+  "imports": {
+    "@hono/hono": "jsr:@hono/hono@^4.6.3",
+    "@hono/hono/cors": "jsr:@hono/hono@^4.6.3/cors",
+    "@hpke/core": "npm:@hpke/core@^1.4.3",
+    "@hpke/chacha20poly1305": "npm:@hpke/chacha20poly1305@^1.4.3",
+    "@privy-io/server-auth": "npm:@privy-io/server-auth@^1.12.1",
+    "@privy-io/server-auth/wallet-api": "npm:@privy-io/server-auth@^1.12.1/wallet-api",
+    "@privy-io/node": "npm:@privy-io/node@^0.1.0",
+    "viem": "npm:viem@^2.21.0",
+    "stellar-sdk": "npm:stellar-sdk@^12.1.1"
+  }
+}
