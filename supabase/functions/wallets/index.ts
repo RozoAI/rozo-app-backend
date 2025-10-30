@@ -4,12 +4,17 @@ import { PrivyClient } from "@privy-io/node";
 import { Buffer } from "node:buffer";
 import { encodeFunctionData, erc20Abi } from "viem";
 import { dualAuthMiddleware } from "../../_shared/dual-auth-middleware.ts";
-import { extractBearerToken } from "../../_shared/utils.ts";
-import { 
-  requirePinValidation, 
+import {
+  extractClientInfo,
   extractPinFromHeaders,
-  extractClientInfo
-} from '../../_shared/pin-validation.ts';
+  requirePinValidation,
+} from "../../_shared/pin-validation.ts";
+import { extractBearerToken } from "../../_shared/utils.ts";
+import {
+  getStellarErrorMessage as getStellarError,
+  isTrustlineAlreadyExists as isTrustlineExists,
+  submitSignedTrustlineTx,
+} from "./trustline.ts";
 
 const functionName = "wallets";
 const app = new Hono().basePath(`/${functionName}`);
@@ -47,6 +52,13 @@ interface TransactionResult {
   hash: string;
   caip2: string;
   walletId: string;
+}
+
+interface RawSignResponse {
+  data?: {
+    signature?: string;
+    encoding?: string;
+  };
 }
 
 // --- CONSTANTS ---
@@ -425,7 +437,7 @@ async function handleTransactions(c: Context, walletId: string) {
       debugError("Missing user provider ID from authentication", {});
       return c.json({
         error: "Authentication required",
-        details: "Unable to identify user"
+        details: "Unable to identify user",
       }, 401);
     }
 
@@ -439,29 +451,39 @@ async function handleTransactions(c: Context, walletId: string) {
       : await merchantQuery.eq("dynamic_id", userProviderId).single();
 
     if (merchantError || !merchant) {
-      debugError("Merchant not found", { merchantError, userProviderId, isPrivyAuth });
+      debugError("Merchant not found", {
+        merchantError,
+        userProviderId,
+        isPrivyAuth,
+      });
       return c.json({
         success: false,
-        error: "Merchant not found"
+        error: "Merchant not found",
       }, 404);
     }
 
     // Check merchant status (PIN_BLOCKED or INACTIVE)
-    if (merchant.status === 'PIN_BLOCKED') {
-      debugError("Merchant account blocked", { merchantId: merchant.merchant_id, status: merchant.status });
+    if (merchant.status === "PIN_BLOCKED") {
+      debugError("Merchant account blocked", {
+        merchantId: merchant.merchant_id,
+        status: merchant.status,
+      });
       return c.json({
         success: false,
-        error: 'Account blocked due to PIN security violations',
-        code: 'PIN_BLOCKED'
+        error: "Account blocked due to PIN security violations",
+        code: "PIN_BLOCKED",
       }, 403);
     }
 
-    if (merchant.status === 'INACTIVE') {
-      debugError("Merchant account inactive", { merchantId: merchant.merchant_id, status: merchant.status });
+    if (merchant.status === "INACTIVE") {
+      debugError("Merchant account inactive", {
+        merchantId: merchant.merchant_id,
+        status: merchant.status,
+      });
       return c.json({
         success: false,
-        error: 'Account is inactive',
-        code: 'INACTIVE'
+        error: "Account is inactive",
+        code: "INACTIVE",
       }, 403);
     }
 
@@ -498,47 +520,51 @@ async function handleTransactions(c: Context, walletId: string) {
     // Step 3: PIN validation for wallet transactions (mandatory if PIN is set)
     if (merchant.pin_code_hash) {
       const pinCode = extractPinFromHeaders(c.req.raw);
-      
+
       if (!pinCode) {
-        debugError("PIN code required for transaction", { merchantId: merchant.merchant_id });
+        debugError("PIN code required for transaction", {
+          merchantId: merchant.merchant_id,
+        });
         return c.json({
           success: false,
-          error: 'PIN code is required for wallet transaction operations',
-          code: 'PIN_REQUIRED'
+          error: "PIN code is required for wallet transaction operations",
+          code: "PIN_REQUIRED",
         }, 400);
       }
-      
+
       const { ipAddress, userAgent } = extractClientInfo(c.req.raw);
-      
+
       // Validate PIN code
       const pinValidation = await requirePinValidation({
         supabase,
         merchantId: merchant.merchant_id,
         pinCode,
         ipAddress,
-        userAgent
+        userAgent,
       });
-      
+
       if (!pinValidation.success) {
-        debugError("PIN validation failed", { 
-          merchantId: merchant.merchant_id, 
+        debugError("PIN validation failed", {
+          merchantId: merchant.merchant_id,
           error: pinValidation.error,
-          attemptsRemaining: pinValidation.result?.attempts_remaining 
+          attemptsRemaining: pinValidation.result?.attempts_remaining,
         });
         return c.json({
           success: false,
           error: pinValidation.error,
           attempts_remaining: pinValidation.result?.attempts_remaining,
-          is_blocked: pinValidation.result?.is_blocked
+          is_blocked: pinValidation.result?.is_blocked,
         }, 401);
       }
-      
-      debugSuccess("PIN validation successful", { merchantId: merchant.merchant_id });
+
+      debugSuccess("PIN validation successful", {
+        merchantId: merchant.merchant_id,
+      });
     }
 
     // Step 4: Validate request and get wallet owner
     const authHeader = c.req.header("Authorization");
-    const { token, walletOwner } = await validateTransactionRequest(
+    const { token: _token, walletOwner } = await validateTransactionRequest(
       authHeader ?? null,
       walletId,
     );
@@ -564,7 +590,7 @@ async function handleTransactions(c: Context, walletId: string) {
     await updateWalletWithPolicy(
       privy,
       walletId,
-      token,
+      _token,
       transactionRequest.signature,
       walletOwner.owner_id,
       transactionConfig.policyId,
@@ -577,7 +603,7 @@ async function handleTransactions(c: Context, walletId: string) {
     const transactionResult = await sendTransaction(
       privy,
       walletId,
-      token,
+      _token,
       transactionRequest.signature,
       transactionConfig,
       encodedData,
@@ -613,7 +639,13 @@ app.use(
   "*",
   cors({
     origin: "*",
-    allowHeaders: ["authorization", "x-client-info", "apikey", "content-type", "x-pin-code"],
+    allowHeaders: [
+      "authorization",
+      "x-client-info",
+      "apikey",
+      "content-type",
+      "x-pin-code",
+    ],
     allowMethods: ["POST", "GET", "OPTIONS"],
   }),
 );
@@ -643,4 +675,158 @@ app.post(
     return handleTransactions(c, c.req.param("walletId"));
   },
 );
+
+async function handleEnableUsdc(c: Context, walletId: string) {
+  try {
+    debugLog("Enable USDC - start", { walletId });
+    // Get authentication context from middleware
+    const supabase = c.get("supabase");
+    const userProviderId = c.get("dynamicId");
+    const isPrivyAuth = c.get("isPrivyAuth");
+
+    if (!userProviderId) {
+      debugError("Enable USDC - missing user provider id", {});
+      return c.json({ success: false, error: "Authentication required" }, 401);
+    }
+
+    // Check merchant status before allowing trustline
+    debugLog("Enable USDC - verifying merchant", {
+      userProviderId,
+      isPrivyAuth,
+    });
+    const merchantQuery = supabase
+      .from("merchants")
+      .select("merchant_id, status, pin_code_hash");
+
+    const { data: merchant, error: merchantError } = isPrivyAuth
+      ? await merchantQuery.eq("privy_id", userProviderId).single()
+      : await merchantQuery.eq("dynamic_id", userProviderId).single();
+
+    if (merchantError || !merchant) {
+      debugError("Enable USDC - merchant not found", { merchantError });
+      return c.json({ success: false, error: "Merchant not found" }, 404);
+    }
+
+    if (merchant.status === "PIN_BLOCKED") {
+      debugError("Enable USDC - merchant blocked", {
+        merchantId: merchant.merchant_id,
+      });
+      return c.json({
+        success: false,
+        error: "Account blocked due to PIN security violations",
+        code: "PIN_BLOCKED",
+      }, 403);
+    }
+    if (merchant.status === "INACTIVE") {
+      debugError("Enable USDC - merchant inactive", {
+        merchantId: merchant.merchant_id,
+      });
+      return c.json({
+        success: false,
+        error: "Account is inactive",
+        code: "INACTIVE",
+      }, 403);
+    }
+    debugSuccess("Enable USDC - merchant verified", {
+      merchantId: merchant.merchant_id,
+    });
+
+    // PIN validation if PIN is set
+    if (merchant.pin_code_hash) {
+      const pinCode = extractPinFromHeaders(c.req.raw);
+      if (!pinCode) {
+        debugError("Enable USDC - missing PIN header", {
+          merchantId: merchant.merchant_id,
+        });
+        return c.json({
+          success: false,
+          error: "PIN code is required for wallet transaction operations",
+          code: "PIN_REQUIRED",
+        }, 400);
+      }
+      const { ipAddress, userAgent } = extractClientInfo(c.req.raw);
+      const pinValidation = await requirePinValidation({
+        supabase,
+        merchantId: merchant.merchant_id,
+        pinCode,
+        ipAddress,
+        userAgent,
+      });
+      if (!pinValidation.success) {
+        debugError("Enable USDC - PIN validation failed", {
+          merchantId: merchant.merchant_id,
+          attempts_remaining: pinValidation.result?.attempts_remaining,
+          is_blocked: pinValidation.result?.is_blocked,
+        });
+        return c.json({
+          success: false,
+          error: pinValidation.error,
+          attempts_remaining: pinValidation.result?.attempts_remaining,
+          is_blocked: pinValidation.result?.is_blocked,
+        }, 401);
+      }
+      debugSuccess("Enable USDC - PIN validation successful", {
+        merchantId: merchant.merchant_id,
+      });
+    }
+
+    // Validate wallet ownership and fetch address
+    const authHeader = c.req.header("Authorization");
+    const { token: _token, walletOwner } = await validateTransactionRequest(
+      authHeader ?? null,
+      walletId,
+    );
+    if (!walletOwner.owner_id || !walletOwner.address) {
+      debugError("Enable USDC - wallet not found or missing address", {
+        walletId,
+      });
+      return c.json({
+        success: false,
+        error: "Wallet not found or missing address",
+      }, 404);
+    }
+    debugSuccess("Enable USDC - wallet verified", {
+      ownerId: walletOwner.owner_id,
+      address: walletOwner.address,
+    });
+
+    const publicKey = walletOwner.address;
+
+    // Submit to Stellar network
+    const submission = await submitSignedTrustlineTx({
+      walletId,
+      signerPublicKey: publicKey,
+    });
+
+    if (submission.successful) {
+      debugSuccess("Enable USDC - trustline submitted", {
+        hash: submission.hash,
+        ledger: submission.ledger,
+      });
+      return c.json({ success: true, result: submission }, 200);
+    }
+
+    if (submission.alreadyExists || isTrustlineExists(submission.raw)) {
+      debugSuccess("Enable USDC - trustline already exists");
+      return c.json(
+        { success: true, already_exists: true, result: submission },
+        200,
+      );
+    }
+
+    debugError("Enable USDC - submission failed", submission.raw);
+    return c.json(
+      { success: false, error: getStellarError(submission.raw) },
+      400,
+    );
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    debugError("Enable USDC - unhandled error", e);
+    return c.json({ success: false, error: message }, 500);
+  }
+}
+
+app.post("/:walletId/enable-usdc", (c) => {
+  return handleEnableUsdc(c, c.req.param("walletId"));
+});
 Deno.serve(app.fetch);
