@@ -96,6 +96,7 @@ export async function buildUsdcTrustlineTx(
 }
 
 export interface SubmitSignedTrustlineParams {
+  token: string;
   walletId: string;
   signerPublicKey: string; // signer's public key (G...)
 }
@@ -154,7 +155,7 @@ export async function submitSignedTrustlineTx(
     },
   } as const;
 
-  const signature = generateAuthorizationSignature({
+  const signKey = generateAuthorizationSignature({
     input: signaturePayload,
     authorizationPrivateKey: authorizationPrivateKey,
   });
@@ -164,14 +165,21 @@ export async function submitSignedTrustlineTx(
     appSecret: PRIVY_APP_SECRET,
   });
 
-  const { data } = await privy.wallets()._rawSign(params.walletId, {
-    "privy-authorization-signature": signature,
-    params: {
-      hash: hashHex,
+  const { signature } = await privy.wallets().rawSign(
+    params.walletId,
+    {
+      params: {
+        hash: hashHex,
+      },
+      authorization_context: {
+        user_jwts: [params.token],
+        signatures: [signKey],
+        authorization_private_keys: [authorizationPrivateKey],
+      },
     },
-  });
+  );
 
-  const signatureBuffer = Buffer.from(data.signature.replace("0x", ""), "hex");
+  const signatureBuffer = Buffer.from(signature.replace("0x", ""), "hex");
   tx.addSignature(params.signerPublicKey, signatureBuffer.toString("base64"));
 
   try {

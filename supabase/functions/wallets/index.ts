@@ -772,7 +772,7 @@ async function handleEnableUsdc(c: Context, walletId: string) {
 
     // Validate wallet ownership and fetch address
     const authHeader = c.req.header("Authorization");
-    const { token: _token, walletOwner } = await validateTransactionRequest(
+    const { token, walletOwner } = await validateTransactionRequest(
       authHeader ?? null,
       walletId,
     );
@@ -794,6 +794,7 @@ async function handleEnableUsdc(c: Context, walletId: string) {
 
     // Submit to Stellar network
     const submission = await submitSignedTrustlineTx({
+      token,
       walletId,
       signerPublicKey: publicKey,
     });
