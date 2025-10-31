@@ -1,0 +1,3 @@
+# Firebase service account credentials
+# NEVER commit this file to git!
+firebase-service-account.json
