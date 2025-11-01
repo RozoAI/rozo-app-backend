@@ -16,11 +16,18 @@ ALTER TABLE "public"."orders"
   ADD COLUMN IF NOT EXISTS "preferred_token_id" text;
 
 -- Add foreign key constraint to tokens table
-ALTER TABLE "public"."orders"
-  ADD CONSTRAINT "orders_preferred_token_id_fkey"
-  FOREIGN KEY ("preferred_token_id")
-  REFERENCES "public"."tokens"("token_id")
-  ON DELETE SET NULL;
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'orders_preferred_token_id_fkey'
+    ) THEN
+        ALTER TABLE "public"."orders"
+            ADD CONSTRAINT "orders_preferred_token_id_fkey"
+            FOREIGN KEY ("preferred_token_id")
+            REFERENCES "public"."tokens"("token_id")
+            ON DELETE SET NULL;
+    END IF;
+END $$;
 
 -- Create index for preferred_token_id queries
 CREATE INDEX IF NOT EXISTS "orders_preferred_token_id_idx" ON "public"."orders" USING "btree" ("preferred_token_id");

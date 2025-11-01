@@ -37,7 +37,7 @@ interface TokenData {
 
 type CreateDaimoPaymentLinkProps = {
   intent: string,
-  merchant: any,
+  destinationAddress: string,
   amountUnits: string,
   orderNumber: string,
   description?: string,
@@ -49,7 +49,6 @@ type CreateDaimoPaymentLinkProps = {
 
 /**
  * @param intent - Purpose of the payment (e.g., "Pay Order", "Purchase", "Deposit")
- * @param merchant - Merchant object containing wallet_address
  * @param destinationToken - Token configuration for destination (where payment goes)
  * @param preferredToken - Token configuration for preferred payment method
  * @param amountUnits - Amount to receive as string (e.g., "1.00", "10.50")
@@ -57,8 +56,8 @@ type CreateDaimoPaymentLinkProps = {
  */
 export async function createDaimoPaymentLink({
   intent,
+  destinationAddress,
   amountUnits,
-  merchant,
   orderNumber,
   description,
   redirect_uri,
@@ -66,9 +65,6 @@ export async function createDaimoPaymentLink({
   preferredToken,
   isOrder = true
 }: CreateDaimoPaymentLinkProps): Promise<DaimoPaymentResponse> {
-  const { wallet_address } = merchant;
-
-  const destinationAddress = wallet_address;
   const destinationChainId = Number(destinationToken.chain_id);
   const tokenAddress = destinationToken.token_address;
 
@@ -132,7 +128,7 @@ export async function createDaimoPaymentLink({
         ],
         payer: {},
         orderDate: new Date().toISOString(),
-        merchantToken: wallet_address || "",
+        merchantToken: destinationAddress || "",
         callbackUrl: "https://iufqieirueyalyxfzszh.supabase.co/functions/v1/payment-callback"
       },
       preferredChain: preferredToken.chain_id,

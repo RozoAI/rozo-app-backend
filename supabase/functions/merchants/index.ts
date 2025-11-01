@@ -40,6 +40,7 @@ interface Merchant {
   pin_code_attempts?: number;
   pin_code_blocked_at?: string;
   pin_code_last_attempt_at?: string;
+  stellar_address?: string;
 }
 
 interface SetPinRequest {
@@ -346,7 +347,8 @@ async function handlePut(
 
     // Parse the request body
     const requestData = await request.json();
-    const { display_name, logo, email, default_token_id } = requestData;
+    const { display_name, logo, email, default_token_id, stellar_address } =
+      requestData;
 
     // Prepare update data
     const updateData: Partial<Merchant> = {
@@ -364,6 +366,10 @@ async function handlePut(
 
     if (default_token_id) {
       updateData.default_token_id = default_token_id;
+    }
+
+    if (stellar_address) {
+      updateData.stellar_address = stellar_address;
     }
 
     // Handle logo upload if provided
