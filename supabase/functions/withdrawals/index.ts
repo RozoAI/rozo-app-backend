@@ -3,26 +3,24 @@
 // This enables autocomplete, go to definition, etc.
 
 // Setup type definitions for built-in Supabase Runtime APIs
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
-import { 
-  getDynamicIdFromJWT,
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import {
+  extractClientInfo,
+  extractPinFromHeaders,
+  requirePinValidation,
+} from "../../_shared/pin-validation.ts";
+import {
   extractBearerToken,
   verifyDynamicJWT,
   verifyPrivyJWT,
-} from '../../_shared/utils.ts';
-import { 
-  requirePinValidation, 
-  extractPinFromHeaders,
-  extractClientInfo,
-  createBlockedResponse
-} from '../../_shared/pin-validation.ts';
+} from "../../_shared/utils.ts";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type, x-pin-code',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-pin-code",
+  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
 };
 
 async function handleGetRequest(
@@ -41,7 +39,6 @@ async function handleGetRequest(
       ? await merchantQuery.eq("privy_id", userProviderId).single()
       : await merchantQuery.eq("dynamic_id", userProviderId).single();
 
-
     if (merchantError || !merchantData) {
       return Response.json(
         { error: "Merchant not found" },
@@ -53,23 +50,23 @@ async function handleGetRequest(
     }
 
     // Check merchant status (PIN_BLOCKED or INACTIVE)
-    if (merchantData.status === 'PIN_BLOCKED') {
+    if (merchantData.status === "PIN_BLOCKED") {
       return Response.json(
-        { 
-          error: 'Account blocked due to PIN security violations',
-          code: 'PIN_BLOCKED'
+        {
+          error: "Account blocked due to PIN security violations",
+          code: "PIN_BLOCKED",
         },
-        { status: 403, headers: corsHeaders }
+        { status: 403, headers: corsHeaders },
       );
     }
 
-    if (merchantData.status === 'INACTIVE') {
+    if (merchantData.status === "INACTIVE") {
       return Response.json(
-        { 
-          error: 'Account is inactive',
-          code: 'INACTIVE'
+        {
+          error: "Account is inactive",
+          code: "INACTIVE",
         },
-        { status: 403, headers: corsHeaders }
+        { status: 403, headers: corsHeaders },
       );
     }
 
@@ -140,7 +137,6 @@ async function handlePostRequest(
       ? await merchantQuery.eq("privy_id", userProviderId).single()
       : await merchantQuery.eq("dynamic_id", userProviderId).single();
 
-
     if (merchantError || !merchantData) {
       return Response.json(
         { error: "Merchant not found" },
@@ -152,23 +148,23 @@ async function handlePostRequest(
     }
 
     // Check merchant status (PIN_BLOCKED or INACTIVE)
-    if (merchantData.status === 'PIN_BLOCKED') {
+    if (merchantData.status === "PIN_BLOCKED") {
       return Response.json(
-        { 
-          error: 'Account blocked due to PIN security violations',
-          code: 'PIN_BLOCKED'
+        {
+          error: "Account blocked due to PIN security violations",
+          code: "PIN_BLOCKED",
         },
-        { status: 403, headers: corsHeaders }
+        { status: 403, headers: corsHeaders },
       );
     }
 
-    if (merchantData.status === 'INACTIVE') {
+    if (merchantData.status === "INACTIVE") {
       return Response.json(
-        { 
-          error: 'Account is inactive',
-          code: 'INACTIVE'
+        {
+          error: "Account is inactive",
+          code: "INACTIVE",
         },
-        { status: 403, headers: corsHeaders }
+        { status: 403, headers: corsHeaders },
       );
     }
 
@@ -201,21 +197,21 @@ async function handlePostRequest(
     // PIN validation for withdrawal (mandatory if PIN is set)
     const pinCode = extractPinFromHeaders(req);
     const { ipAddress, userAgent } = extractClientInfo(req);
-    
+
     // Check if merchant has PIN set by querying merchant data
     const { data: merchantWithPin, error: pinError } = await supabase
-      .from('merchants')
-      .select('pin_code_hash')
-      .eq('merchant_id', merchantData.merchant_id)
+      .from("merchants")
+      .select("pin_code_hash")
+      .eq("merchant_id", merchantData.merchant_id)
       .single();
-    
+
     if (!pinError && merchantWithPin && merchantWithPin.pin_code_hash) {
       // PIN is required for withdrawals
       if (!pinCode) {
         return Response.json(
-          { 
-            error: 'PIN code is required for withdrawal operations',
-            code: 'PIN_REQUIRED'
+          {
+            error: "PIN code is required for withdrawal operations",
+            code: "PIN_REQUIRED",
           },
           {
             status: 400,
@@ -223,22 +219,22 @@ async function handlePostRequest(
           },
         );
       }
-      
+
       // Validate PIN code
       const pinValidation = await requirePinValidation({
         supabase,
         merchantId: merchantData.merchant_id,
         pinCode,
         ipAddress,
-        userAgent
+        userAgent,
       });
-      
+
       if (!pinValidation.success) {
         return Response.json(
-          { 
+          {
             error: pinValidation.error,
             attempts_remaining: pinValidation.result?.attempts_remaining,
-            is_blocked: pinValidation.result?.is_blocked
+            is_blocked: pinValidation.result?.is_blocked,
           },
           {
             status: 401,
@@ -377,7 +373,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
 
     switch (req.method) {
       case "GET":

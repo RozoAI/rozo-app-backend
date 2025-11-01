@@ -32,7 +32,12 @@ export const dynamicAuthMiddleware = async (c: Context, next: Next) => {
 
   // Add authenticated data to context
   c.set("dynamicId", dynamicIdRes.dynamicId);
-  c.set("supabase", createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY));
+  c.set("supabase", createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  ));
 
   await next();
 };

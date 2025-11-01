@@ -37,31 +37,84 @@ CREATE TABLE IF NOT EXISTS "public"."deposits" (
 ALTER TABLE "public"."deposits" OWNER TO "postgres";
 
 -- Primary Key
-ALTER TABLE ONLY "public"."deposits"
-    ADD CONSTRAINT "deposits_pkey" PRIMARY KEY ("deposit_id");
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'deposits_pkey' 
+        AND conrelid = 'public.deposits'::regclass
+    ) THEN
+        ALTER TABLE ONLY "public"."deposits"
+            ADD CONSTRAINT "deposits_pkey" PRIMARY KEY ("deposit_id");
+    END IF;
+END $$;
 
 -- Unique constraints
-ALTER TABLE ONLY "public"."deposits"
-    ADD CONSTRAINT "deposits_payment_id_key" UNIQUE ("payment_id");
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'deposits_payment_id_key'
+    ) THEN
+        ALTER TABLE ONLY "public"."deposits"
+            ADD CONSTRAINT "deposits_payment_id_key" UNIQUE ("payment_id");
+    END IF;
+END $$;
 
-ALTER TABLE ONLY "public"."deposits"
-    ADD CONSTRAINT "deposits_source_txn_hash_key" UNIQUE ("source_txn_hash");
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'deposits_source_txn_hash_key'
+    ) THEN
+        ALTER TABLE ONLY "public"."deposits"
+            ADD CONSTRAINT "deposits_source_txn_hash_key" UNIQUE ("source_txn_hash");
+    END IF;
+END $$;
 
-ALTER TABLE ONLY "public"."deposits"
-    ADD CONSTRAINT "deposits_number_key" UNIQUE ("number");
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'deposits_number_key'
+    ) THEN
+        ALTER TABLE ONLY "public"."deposits"
+            ADD CONSTRAINT "deposits_number_key" UNIQUE ("number");
+    END IF;
+END $$;
 
 -- Indexes
-CREATE INDEX "deposits_number_idx" ON "public"."deposits" USING "btree" ("number");
+CREATE INDEX IF NOT EXISTS "deposits_number_idx" ON "public"."deposits" USING "btree" ("number");
 
 -- Foreign Keys
-ALTER TABLE ONLY "public"."deposits"
-    ADD CONSTRAINT "deposits_merchant_id_fkey" FOREIGN KEY ("merchant_id") REFERENCES "public"."merchants"("merchant_id");
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'deposits_merchant_id_fkey'
+    ) THEN
+        ALTER TABLE ONLY "public"."deposits"
+            ADD CONSTRAINT "deposits_merchant_id_fkey" FOREIGN KEY ("merchant_id") REFERENCES "public"."merchants"("merchant_id");
+    END IF;
+END $$;
 
-ALTER TABLE ONLY "public"."deposits"
-    ADD CONSTRAINT "deposits_display_currency_fkey" FOREIGN KEY ("display_currency") REFERENCES "public"."currencies"("currency_id");
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'deposits_display_currency_fkey'
+    ) THEN
+        ALTER TABLE ONLY "public"."deposits"
+            ADD CONSTRAINT "deposits_display_currency_fkey" FOREIGN KEY ("display_currency") REFERENCES "public"."currencies"("currency_id");
+    END IF;
+END $$;
 
 -- Row Level Security Policy
-CREATE POLICY "crud_access_to_service_role_for_deposits" ON "public"."deposits" TO "service_role" USING (true) WITH CHECK (true);
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE schemaname = 'public' 
+        AND tablename = 'deposits' 
+        AND policyname = 'crud_access_to_service_role_for_deposits'
+    ) THEN
+        CREATE POLICY "crud_access_to_service_role_for_deposits" ON "public"."deposits" TO "service_role" USING (true) WITH CHECK (true);
+    END IF;
+END $$;
 
 -- Enable RLS
 ALTER TABLE "public"."deposits" ENABLE ROW LEVEL SECURITY;

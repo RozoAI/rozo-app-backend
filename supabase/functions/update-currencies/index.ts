@@ -15,7 +15,12 @@ const supabaseClient = () => {
     "SUPABASE_SERVICE_ROLE_KEY",
   ) as string;
 
-  return createClient(supabaseUrl, supabaseServiceKey);
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
 };
 
 // Define the CORS headers

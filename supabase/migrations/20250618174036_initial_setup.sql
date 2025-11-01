@@ -20,13 +20,17 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
 CREATE EXTENSION IF NOT EXISTS "supabase_vault" WITH SCHEMA "vault";
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
 -- Custom Types
-CREATE TYPE "public"."payment_status" AS ENUM (
-    'PENDING',
-    'PROCESSING',
-    'COMPLETED',
-    'FAILED',
-    'DISCREPANCY'
-);
+DO $$ BEGIN
+    CREATE TYPE "public"."payment_status" AS ENUM (
+        'PENDING',
+        'PROCESSING',
+        'COMPLETED',
+        'FAILED',
+        'DISCREPANCY'
+    );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 ALTER TYPE "public"."payment_status" OWNER TO "postgres";
 SET default_tablespace = '';
 SET default_table_access_method = "heap";
@@ -89,41 +93,187 @@ CREATE TABLE IF NOT EXISTS "public"."tokens" (
 );
 ALTER TABLE "public"."tokens" OWNER TO "postgres";
 -- Primary Keys
-ALTER TABLE ONLY "public"."currencies"
-    ADD CONSTRAINT "currencies_pkey" PRIMARY KEY ("currency_id");
-ALTER TABLE ONLY "public"."languages"
-    ADD CONSTRAINT "languages_pkey" PRIMARY KEY ("language_id");
-ALTER TABLE ONLY "public"."merchants"
-    ADD CONSTRAINT "merchants_dynamic_id_key" UNIQUE ("dynamic_id");
-ALTER TABLE ONLY "public"."merchants"
-    ADD CONSTRAINT "merchants_email_key" UNIQUE ("email");
-ALTER TABLE ONLY "public"."merchants"
-    ADD CONSTRAINT "merchants_pkey" PRIMARY KEY ("merchant_id");
-ALTER TABLE ONLY "public"."orders"
-    ADD CONSTRAINT "orders_payment_id_key" UNIQUE ("payment_id");
-ALTER TABLE ONLY "public"."orders"
-    ADD CONSTRAINT "orders_pkey" PRIMARY KEY ("order_id");
-ALTER TABLE ONLY "public"."orders"
-    ADD CONSTRAINT "orders_source_txn_hash_key" UNIQUE ("source_txn_hash");
-ALTER TABLE ONLY "public"."tokens"
-    ADD CONSTRAINT "tokens_pkey" PRIMARY KEY ("token_id");
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'currencies_pkey' 
+        AND conrelid = 'public.currencies'::regclass
+    ) THEN
+        ALTER TABLE ONLY "public"."currencies"
+            ADD CONSTRAINT "currencies_pkey" PRIMARY KEY ("currency_id");
+    END IF;
+END $$;
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'languages_pkey' 
+        AND conrelid = 'public.languages'::regclass
+    ) THEN
+        ALTER TABLE ONLY "public"."languages"
+            ADD CONSTRAINT "languages_pkey" PRIMARY KEY ("language_id");
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'merchants_dynamic_id_key'
+    ) THEN
+        ALTER TABLE ONLY "public"."merchants"
+            ADD CONSTRAINT "merchants_dynamic_id_key" UNIQUE ("dynamic_id");
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'merchants_email_key'
+    ) THEN
+        ALTER TABLE ONLY "public"."merchants"
+            ADD CONSTRAINT "merchants_email_key" UNIQUE ("email");
+    END IF;
+END $$;
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'merchants_pkey' 
+        AND conrelid = 'public.merchants'::regclass
+    ) THEN
+        ALTER TABLE ONLY "public"."merchants"
+            ADD CONSTRAINT "merchants_pkey" PRIMARY KEY ("merchant_id");
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'orders_payment_id_key'
+    ) THEN
+        ALTER TABLE ONLY "public"."orders"
+            ADD CONSTRAINT "orders_payment_id_key" UNIQUE ("payment_id");
+    END IF;
+END $$;
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'orders_pkey' 
+        AND conrelid = 'public.orders'::regclass
+    ) THEN
+        ALTER TABLE ONLY "public"."orders"
+            ADD CONSTRAINT "orders_pkey" PRIMARY KEY ("order_id");
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'orders_source_txn_hash_key'
+    ) THEN
+        ALTER TABLE ONLY "public"."orders"
+            ADD CONSTRAINT "orders_source_txn_hash_key" UNIQUE ("source_txn_hash");
+    END IF;
+END $$;
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'tokens_pkey' 
+        AND conrelid = 'public.tokens'::regclass
+    ) THEN
+        ALTER TABLE ONLY "public"."tokens"
+            ADD CONSTRAINT "tokens_pkey" PRIMARY KEY ("token_id");
+    END IF;
+END $$;
 -- Indexes
-CREATE INDEX "merchants_dynamic_id_idx" ON "public"."merchants" USING "btree" ("dynamic_id");
+CREATE INDEX IF NOT EXISTS "merchants_dynamic_id_idx" ON "public"."merchants" USING "btree" ("dynamic_id");
 -- Foreign Keys
-ALTER TABLE ONLY "public"."merchants"
-    ADD CONSTRAINT "merchants_default_currency_fkey" FOREIGN KEY ("default_currency") REFERENCES "public"."currencies"("currency_id");
-ALTER TABLE ONLY "public"."merchants"
-    ADD CONSTRAINT "merchants_default_language_fkey" FOREIGN KEY ("default_language") REFERENCES "public"."languages"("language_id");
-ALTER TABLE ONLY "public"."merchants"
-    ADD CONSTRAINT "merchants_default_token_id_fkey" FOREIGN KEY ("default_token_id") REFERENCES "public"."tokens"("token_id");
-ALTER TABLE ONLY "public"."orders"
-    ADD CONSTRAINT "orders_display_currency_fkey" FOREIGN KEY ("display_currency") REFERENCES "public"."currencies"("currency_id");
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'merchants_default_currency_fkey'
+    ) THEN
+        ALTER TABLE ONLY "public"."merchants"
+            ADD CONSTRAINT "merchants_default_currency_fkey" FOREIGN KEY ("default_currency") REFERENCES "public"."currencies"("currency_id");
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'merchants_default_language_fkey'
+    ) THEN
+        ALTER TABLE ONLY "public"."merchants"
+            ADD CONSTRAINT "merchants_default_language_fkey" FOREIGN KEY ("default_language") REFERENCES "public"."languages"("language_id");
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'merchants_default_token_id_fkey'
+    ) THEN
+        ALTER TABLE ONLY "public"."merchants"
+            ADD CONSTRAINT "merchants_default_token_id_fkey" FOREIGN KEY ("default_token_id") REFERENCES "public"."tokens"("token_id");
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'orders_display_currency_fkey'
+    ) THEN
+        ALTER TABLE ONLY "public"."orders"
+            ADD CONSTRAINT "orders_display_currency_fkey" FOREIGN KEY ("display_currency") REFERENCES "public"."currencies"("currency_id");
+    END IF;
+END $$;
 -- Row Level Security Policies
-CREATE POLICY "crud_access_to_service_role_for_currencies" ON "public"."currencies" TO "service_role" USING (true) WITH CHECK (true);
-CREATE POLICY "crud_access_to_service_role_for_languages" ON "public"."languages" TO "service_role" USING (true) WITH CHECK (true);
-CREATE POLICY "crud_access_to_service_role_for_merchants" ON "public"."merchants" TO "service_role" USING (true) WITH CHECK (true);
-CREATE POLICY "crud_access_to_service_role_for_orders" ON "public"."orders" TO "service_role" USING (true) WITH CHECK (true);
-CREATE POLICY "crud_access_to_service_role_for_tokens" ON "public"."tokens" TO "service_role" USING (true) WITH CHECK (true);
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE schemaname = 'public' 
+        AND tablename = 'currencies' 
+        AND policyname = 'crud_access_to_service_role_for_currencies'
+    ) THEN
+        CREATE POLICY "crud_access_to_service_role_for_currencies" ON "public"."currencies" TO "service_role" USING (true) WITH CHECK (true);
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE schemaname = 'public' 
+        AND tablename = 'languages' 
+        AND policyname = 'crud_access_to_service_role_for_languages'
+    ) THEN
+        CREATE POLICY "crud_access_to_service_role_for_languages" ON "public"."languages" TO "service_role" USING (true) WITH CHECK (true);
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE schemaname = 'public' 
+        AND tablename = 'merchants' 
+        AND policyname = 'crud_access_to_service_role_for_merchants'
+    ) THEN
+        CREATE POLICY "crud_access_to_service_role_for_merchants" ON "public"."merchants" TO "service_role" USING (true) WITH CHECK (true);
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE schemaname = 'public' 
+        AND tablename = 'orders' 
+        AND policyname = 'crud_access_to_service_role_for_orders'
+    ) THEN
+        CREATE POLICY "crud_access_to_service_role_for_orders" ON "public"."orders" TO "service_role" USING (true) WITH CHECK (true);
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE schemaname = 'public' 
+        AND tablename = 'tokens' 
+        AND policyname = 'crud_access_to_service_role_for_tokens'
+    ) THEN
+        CREATE POLICY "crud_access_to_service_role_for_tokens" ON "public"."tokens" TO "service_role" USING (true) WITH CHECK (true);
+    END IF;
+END $$;
 -- Enable RLS
 ALTER TABLE "public"."currencies" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."languages" ENABLE ROW LEVEL SECURITY;

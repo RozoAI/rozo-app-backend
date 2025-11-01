@@ -1,5 +1,5 @@
 import { createDaimoPaymentLink } from "../../_shared/daimo-pay.ts";
-import { generateOrderNumber, extractBearerToken } from "../../_shared/utils.ts";
+import { generateOrderNumber } from "../../_shared/utils.ts";
 
 export interface CreateDepositRequest {
   display_amount: number;
@@ -40,12 +40,13 @@ export async function createDeposit(
         privy_id,
         wallet_address,
         default_token_id,
+        stellar_address,
         logo_url
       `,
       );
 
     // Use appropriate column based on auth provider
-    const { data: merchant, error: merchantError} = isPrivyAuth
+    const { data: merchant, error: merchantError } = isPrivyAuth
       ? await merchantQuery.eq("privy_id", userProviderId).single()
       : await merchantQuery.eq("dynamic_id", userProviderId).single();
 
@@ -56,17 +57,42 @@ export async function createDeposit(
       };
     }
 
+    // Validate default_token_id
+    if (!merchant.default_token_id) {
+      return {
+        success: false,
+        error: "Merchant's default_token_id is not set",
+      };
+    }
+
+    // Trim whitespace from token_id (in case of data issues)
+    const tokenId = String(merchant.default_token_id).trim();
+
+    if (!tokenId) {
+      return {
+        success: false,
+        error: "Merchant's default_token_id is empty after trimming",
+      };
+    }
+
     // Fetch default token
     const { data: defaultToken, error: tokenError } = await supabase
       .from("tokens")
-      .select("token_id, token_name, token_address, chain_id, chain_name")
-      .eq("token_id", merchant.default_token_id)
+      .select("*")
+      .eq("token_id", tokenId)
       .single();
 
     if (tokenError || !defaultToken) {
+      console.error("Token query error:", {
+        tokenId,
+        error: tokenError,
+        merchantDefaultTokenId: merchant.default_token_id,
+      });
       return {
         success: false,
-        error: "Merchant's default token not found",
+        error: `Merchant's default token not found: ${tokenId}${
+          tokenError ? ` (${tokenError.message})` : ""
+        }`,
       };
     }
 
@@ -97,9 +123,30 @@ export async function createDeposit(
 
     const formattedUsdAmount = parseFloat(required_amount_usd.toFixed(2));
     const depositNumber = generateOrderNumber();
+    console.log("[DEPOSIT] Creating deposit with number:", depositNumber);
+    console.log("[DEPOSIT] Merchant:", merchant);
+    console.log("[DEPOSIT] Default token:", defaultToken);
+    console.log("[DEPOSIT] Formatted USD amount:", formattedUsdAmount);
+    console.log("[DEPOSIT] Deposit data:", depositData);
+    console.log("[DEPOSIT] Redirect URI:", depositData.redirect_uri);
+    console.log("[DEPOSIT] Destination token:", defaultToken);
+    console.log("[DEPOSIT] Preferred token:", defaultToken);
+    console.log("[DEPOSIT] Is order:", false);
+    console.log("[DEPOSIT] Default token ID:", merchant.default_token_id);
+    const destinationAddress = merchant.default_token_id === "USDC_XLM"
+      ? merchant.stellar_address
+      : merchant.wallet_address;
+    console.log("[DEPOSIT] Destination address:", destinationAddress);
+
+    if (!destinationAddress) {
+      return {
+        success: false,
+        error: "Destination address not found",
+      };
+    }
 
     const paymentResponse = await createDaimoPaymentLink({
-      merchant,
+      destinationAddress,
       intent: "Deposit Payment",
       orderNumber: depositNumber,
       amountUnits: formattedUsdAmount.toString(),
@@ -123,7 +170,7 @@ export async function createDeposit(
       merchant_id: merchant.merchant_id,
       payment_id: paymentResponse.paymentDetail.id,
       merchant_chain_id: defaultToken.chain_id,
-      merchant_address: merchant.wallet_address,
+      merchant_address: destinationAddress,
       required_amount_usd: formattedUsdAmount,
       required_token: defaultToken.token_address,
       status: "PENDING",
@@ -151,6 +198,7 @@ export async function createDeposit(
       deposit_id: deposit.deposit_id,
     };
   } catch (error) {
+    console.error("[DEPOSIT] Error creating deposit:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",

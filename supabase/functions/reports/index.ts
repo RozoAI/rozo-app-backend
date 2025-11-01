@@ -21,7 +21,9 @@ async function validateMerchant(
   supabase: any,
   userProviderId: string,
   isPrivyAuth: boolean,
-): Promise<{ success: boolean; merchant?: any; error?: string; code?: string }> {
+): Promise<
+  { success: boolean; merchant?: any; error?: string; code?: string }
+> {
   try {
     const merchantQuery = supabase
       .from("merchants")
@@ -44,19 +46,19 @@ async function validateMerchant(
     }
 
     // Check merchant status
-    if (merchant.status === 'PIN_BLOCKED') {
+    if (merchant.status === "PIN_BLOCKED") {
       return {
         success: false,
-        error: 'Account blocked due to PIN security violations',
-        code: 'PIN_BLOCKED'
+        error: "Account blocked due to PIN security violations",
+        code: "PIN_BLOCKED",
       };
     }
 
-    if (merchant.status === 'INACTIVE') {
+    if (merchant.status === "INACTIVE") {
       return {
         success: false,
-        error: 'Account is inactive',
-        code: 'INACTIVE'
+        error: "Account is inactive",
+        code: "INACTIVE",
       };
     }
 
@@ -80,16 +82,24 @@ async function handleDashboardReport(
 ) {
   try {
     // Validate merchant
-    const merchantResult = await validateMerchant(supabase, userProviderId, isPrivyAuth);
+    const merchantResult = await validateMerchant(
+      supabase,
+      userProviderId,
+      isPrivyAuth,
+    );
     if (!merchantResult.success) {
       return Response.json(
-        { 
-          success: false, 
+        {
+          success: false,
           error: merchantResult.error,
-          code: merchantResult.code 
+          code: merchantResult.code,
         },
         {
-          status: merchantResult.code === 'PIN_BLOCKED' || merchantResult.code === 'INACTIVE' ? 403 : 404,
+          status:
+            merchantResult.code === "PIN_BLOCKED" ||
+              merchantResult.code === "INACTIVE"
+              ? 403
+              : 404,
           headers: corsHeaders,
         },
       );
@@ -99,14 +109,19 @@ async function handleDashboardReport(
     const url = new URL(request.url);
     const from = url.searchParams.get("from");
     const to = url.searchParams.get("to");
-    const groupBy = url.searchParams.get("group_by") as "day" | "week" | "month" | null;
+    const groupBy = url.searchParams.get("group_by") as
+      | "day"
+      | "week"
+      | "month"
+      | null;
 
     // Validate required parameters
     if (!from || !to) {
       return Response.json(
-        { 
-          success: false, 
-          error: "Missing required parameters: 'from' and 'to' dates (YYYY-MM-DD format)" 
+        {
+          success: false,
+          error:
+            "Missing required parameters: 'from' and 'to' dates (YYYY-MM-DD format)",
         },
         {
           status: 400,
@@ -119,9 +134,9 @@ async function handleDashboardReport(
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(from) || !dateRegex.test(to)) {
       return Response.json(
-        { 
-          success: false, 
-          error: "Invalid date format. Use YYYY-MM-DD format" 
+        {
+          success: false,
+          error: "Invalid date format. Use YYYY-MM-DD format",
         },
         {
           status: 400,
@@ -133,9 +148,10 @@ async function handleDashboardReport(
     // Validate group_by parameter
     if (groupBy && !["day", "week", "month"].includes(groupBy)) {
       return Response.json(
-        { 
-          success: false, 
-          error: "Invalid group_by parameter. Must be 'day', 'week', or 'month'" 
+        {
+          success: false,
+          error:
+            "Invalid group_by parameter. Must be 'day', 'week', or 'month'",
         },
         {
           status: 400,
@@ -213,7 +229,9 @@ serve(async (req) => {
     console.log("Reports - Environment variables check:", {
       DYNAMIC_ENV_ID: DYNAMIC_ENV_ID ? "Present" : "Missing",
       SUPABASE_URL: SUPABASE_URL ? "Present" : "Missing",
-      SUPABASE_SERVICE_ROLE_KEY: SUPABASE_SERVICE_ROLE_KEY ? "Present" : "Missing",
+      SUPABASE_SERVICE_ROLE_KEY: SUPABASE_SERVICE_ROLE_KEY
+        ? "Present"
+        : "Missing",
       PRIVY_APP_ID: PRIVY_APP_ID ? "Present" : "Missing",
       PRIVY_APP_SECRET: PRIVY_APP_SECRET ? "Present" : "Missing",
     });
@@ -245,18 +263,24 @@ serve(async (req) => {
     // Verify with Privy
     console.log("Reports - Attempting Privy JWT verification");
     const privy = await verifyPrivyJWT(token, PRIVY_APP_ID, PRIVY_APP_SECRET);
-    console.log("Reports - Privy verification result:", { success: privy.success, error: privy.error });
+    console.log("Reports - Privy verification result:", {
+      success: privy.success,
+      error: privy.error,
+    });
 
     // Verify with Dynamic
     console.log("Reports - Attempting Dynamic JWT verification");
     const tokenVerification = await verifyDynamicJWT(token, DYNAMIC_ENV_ID);
-    console.log("Reports - Dynamic verification result:", { success: tokenVerification.success, error: tokenVerification.error });
-    
+    console.log("Reports - Dynamic verification result:", {
+      success: tokenVerification.success,
+      error: tokenVerification.error,
+    });
+
     if (!tokenVerification.success) {
       if (!privy.success) {
         console.error("Reports - Both auth methods failed", {
           privyError: privy.error,
-          dynamicError: tokenVerification.error
+          dynamicError: tokenVerification.error,
         });
         return Response.json(
           {
@@ -302,7 +326,12 @@ serve(async (req) => {
       );
     }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
     const url = new URL(req.url);
     const pathSegments = url.pathname.split("/").filter(Boolean);
 

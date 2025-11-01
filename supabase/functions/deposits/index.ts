@@ -30,23 +30,23 @@ async function handleGetAllDeposits(c: Context) {
     }
 
     // Check merchant status (PIN_BLOCKED or INACTIVE)
-    if (merchant.status === 'PIN_BLOCKED') {
+    if (merchant.status === "PIN_BLOCKED") {
       return c.json(
-        { 
+        {
           success: false,
-          error: 'Account blocked due to PIN security violations',
-          code: 'PIN_BLOCKED'
+          error: "Account blocked due to PIN security violations",
+          code: "PIN_BLOCKED",
         },
         403,
       );
     }
 
-    if (merchant.status === 'INACTIVE') {
+    if (merchant.status === "INACTIVE") {
       return c.json(
-        { 
+        {
           success: false,
-          error: 'Account is inactive',
-          code: 'INACTIVE'
+          error: "Account is inactive",
+          code: "INACTIVE",
         },
         403,
       );
@@ -85,7 +85,13 @@ async function handleGetAllDeposits(c: Context) {
     }
 
     // Validate status parameter
-    const validStatuses = ["pending", "completed", "failed", "expired", "discrepancy"];
+    const validStatuses = [
+      "pending",
+      "completed",
+      "failed",
+      "expired",
+      "discrepancy",
+    ];
     if (statusParam && !validStatuses.includes(statusParam.toLowerCase())) {
       return c.json(
         {
@@ -184,23 +190,23 @@ async function handleGetSingleDeposit(
     }
 
     // Check merchant status (PIN_BLOCKED or INACTIVE)
-    if (merchant.status === 'PIN_BLOCKED') {
+    if (merchant.status === "PIN_BLOCKED") {
       return c.json(
-        { 
+        {
           success: false,
-          error: 'Account blocked due to PIN security violations',
-          code: 'PIN_BLOCKED'
+          error: "Account blocked due to PIN security violations",
+          code: "PIN_BLOCKED",
         },
         403,
       );
     }
 
-    if (merchant.status === 'INACTIVE') {
+    if (merchant.status === "INACTIVE") {
       return c.json(
-        { 
+        {
           success: false,
-          error: 'Account is inactive',
-          code: 'INACTIVE'
+          error: "Account is inactive",
+          code: "INACTIVE",
         },
         403,
       );
@@ -247,41 +253,49 @@ async function handleCreateDeposit(c: Context) {
     const isPrivyAuth = c.get("isPrivyAuth");
 
     const merchantQuery = supabase
-    .from('merchants')
-    .select('merchant_id, status');
-  
-  const { data: merchant, error: merchantError } = isPrivyAuth
-    ? await merchantQuery.eq('privy_id', dynamicId).single()
-    : await merchantQuery.eq('dynamic_id', dynamicId).single();
-    
-  if (merchantError || !merchant) {
-    return {
-      merchant: null,
-      error: Response.json(
-        { success: false, error: 'Merchant not found' },
-        { status: 404, headers: corsHeaders }
-      )
-    };
-  }
+      .from("merchants")
+      .select("merchant_id, status");
+
+    const { data: merchant, error: merchantError } = isPrivyAuth
+      ? await merchantQuery.eq("privy_id", dynamicId).single()
+      : await merchantQuery.eq("dynamic_id", dynamicId).single();
+
+    if (merchantError || !merchant) {
+      return {
+        merchant: null,
+        error: Response.json(
+          { success: false, error: "Merchant not found" },
+          {
+            status: 404,
+            headers: {
+              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Headers":
+                "authorization, x-client-info, apikey, content-type",
+              "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+            },
+          },
+        ),
+      };
+    }
 
     // Check merchant status (PIN_BLOCKED or INACTIVE)
-    if (merchant.status === 'PIN_BLOCKED') {
+    if (merchant.status === "PIN_BLOCKED") {
       return c.json(
-        { 
+        {
           success: false,
-          error: 'Account blocked due to PIN security violations',
-          code: 'PIN_BLOCKED'
+          error: "Account blocked due to PIN security violations",
+          code: "PIN_BLOCKED",
         },
         403,
       );
     }
 
-    if (merchant.status === 'INACTIVE') {
+    if (merchant.status === "INACTIVE") {
       return c.json(
-        { 
+        {
           success: false,
-          error: 'Account is inactive',
-          code: 'INACTIVE'
+          error: "Account is inactive",
+          code: "INACTIVE",
         },
         403,
       );

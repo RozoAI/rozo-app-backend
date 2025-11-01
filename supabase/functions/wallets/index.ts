@@ -10,6 +10,7 @@ import {
   requirePinValidation,
 } from "../../_shared/pin-validation.ts";
 import { extractBearerToken } from "../../_shared/utils.ts";
+import { submitSignedPaymentTx } from "./transfer.ts";
 import {
   getStellarErrorMessage as getStellarError,
   isTrustlineAlreadyExists as isTrustlineExists,
@@ -830,4 +831,194 @@ async function handleEnableUsdc(c: Context, walletId: string) {
 app.post("/:walletId/enable-usdc", (c) => {
   return handleEnableUsdc(c, c.req.param("walletId"));
 });
+
+async function handleStellarTransfer(c: Context, walletId: string) {
+  try {
+    debugLog("Stellar Transfer - start", { walletId });
+
+    // Get authentication context from middleware
+    const supabase = c.get("supabase");
+    const userProviderId = c.get("dynamicId");
+    const isPrivyAuth = c.get("isPrivyAuth");
+
+    if (!userProviderId) {
+      debugError("Stellar Transfer - missing user provider id", {});
+      return c.json({ success: false, error: "Authentication required" }, 401);
+    }
+
+    // Check merchant status before allowing transfer
+    debugLog("Stellar Transfer - verifying merchant", {
+      userProviderId,
+      isPrivyAuth,
+    });
+    const merchantQuery = supabase
+      .from("merchants")
+      .select("merchant_id, status, pin_code_hash");
+
+    const { data: merchant, error: merchantError } = isPrivyAuth
+      ? await merchantQuery.eq("privy_id", userProviderId).single()
+      : await merchantQuery.eq("dynamic_id", userProviderId).single();
+
+    if (merchantError || !merchant) {
+      debugError("Stellar Transfer - merchant not found", { merchantError });
+      return c.json({ success: false, error: "Merchant not found" }, 404);
+    }
+
+    if (merchant.status === "PIN_BLOCKED") {
+      debugError("Stellar Transfer - merchant blocked", {
+        merchantId: merchant.merchant_id,
+      });
+      return c.json({
+        success: false,
+        error: "Account blocked due to PIN security violations",
+        code: "PIN_BLOCKED",
+      }, 403);
+    }
+    if (merchant.status === "INACTIVE") {
+      debugError("Stellar Transfer - merchant inactive", {
+        merchantId: merchant.merchant_id,
+      });
+      return c.json({
+        success: false,
+        error: "Account is inactive",
+        code: "INACTIVE",
+      }, 403);
+    }
+    debugSuccess("Stellar Transfer - merchant verified", {
+      merchantId: merchant.merchant_id,
+    });
+
+    // PIN validation if PIN is set
+    if (merchant.pin_code_hash) {
+      const pinCode = extractPinFromHeaders(c.req.raw);
+      if (!pinCode) {
+        debugError("Stellar Transfer - missing PIN header", {
+          merchantId: merchant.merchant_id,
+        });
+        return c.json({
+          success: false,
+          error: "PIN code is required for wallet transaction operations",
+          code: "PIN_REQUIRED",
+        }, 400);
+      }
+      const { ipAddress, userAgent } = extractClientInfo(c.req.raw);
+      const pinValidation = await requirePinValidation({
+        supabase,
+        merchantId: merchant.merchant_id,
+        pinCode,
+        ipAddress,
+        userAgent,
+      });
+      if (!pinValidation.success) {
+        debugError("Stellar Transfer - PIN validation failed", {
+          merchantId: merchant.merchant_id,
+          attempts_remaining: pinValidation.result?.attempts_remaining,
+          is_blocked: pinValidation.result?.is_blocked,
+        });
+        return c.json({
+          success: false,
+          error: pinValidation.error,
+          attempts_remaining: pinValidation.result?.attempts_remaining,
+          is_blocked: pinValidation.result?.is_blocked,
+        }, 401);
+      }
+      debugSuccess("Stellar Transfer - PIN validation successful", {
+        merchantId: merchant.merchant_id,
+      });
+    }
+
+    // Parse request body
+    const requestBody = await c.req.json();
+    const { destinationAddress, amount } = requestBody as {
+      destinationAddress?: string;
+      amount?: string | number;
+    };
+
+    if (!destinationAddress || typeof destinationAddress !== "string") {
+      return c.json({
+        success: false,
+        error: "destinationAddress is required and must be a string",
+      }, 400);
+    }
+
+    if (!amount) {
+      return c.json({
+        success: false,
+        error: "amount is required",
+      }, 400);
+    }
+
+    // Convert amount to string if it's a number
+    const amountStr = typeof amount === "number" ? amount.toString() : amount;
+
+    // Validate destination address format (Stellar public key)
+    if (!/^G[A-Z0-9]{55}$/.test(destinationAddress)) {
+      return c.json({
+        success: false,
+        error:
+          "Invalid destination address format. Must be a valid Stellar public key (G...)",
+      }, 400);
+    }
+
+    // Validate wallet ownership and fetch address
+    const authHeader = c.req.header("Authorization");
+    const { token, walletOwner } = await validateTransactionRequest(
+      authHeader ?? null,
+      walletId,
+    );
+    if (!walletOwner.owner_id || !walletOwner.address) {
+      debugError("Stellar Transfer - wallet not found or missing address", {
+        walletId,
+      });
+      return c.json({
+        success: false,
+        error: "Wallet not found or missing address",
+      }, 404);
+    }
+    debugSuccess("Stellar Transfer - wallet verified", {
+      ownerId: walletOwner.owner_id,
+      address: walletOwner.address,
+    });
+
+    const publicKey = walletOwner.address;
+
+    // Submit payment to Stellar network
+    const submission = await submitSignedPaymentTx({
+      token,
+      walletId,
+      signerPublicKey: publicKey,
+      destinationAddress,
+      amount: amountStr,
+    });
+
+    if (submission.successful) {
+      debugSuccess("Stellar Transfer - payment submitted", {
+        hash: submission.hash,
+        ledger: submission.ledger,
+      });
+      return c.json({
+        success: true,
+        result: submission,
+      }, 200);
+    }
+
+    debugError("Stellar Transfer - submission failed", submission.raw);
+    return c.json(
+      {
+        success: false,
+        error: submission.errorMessage || getStellarError(submission.raw),
+      },
+      400,
+    );
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    debugError("Stellar Transfer - unhandled error", e);
+    return c.json({ success: false, error: message }, 500);
+  }
+}
+
+app.post("/:walletId/stellar-transfer", (c) => {
+  return handleStellarTransfer(c, c.req.param("walletId"));
+});
+
 Deno.serve(app.fetch);
