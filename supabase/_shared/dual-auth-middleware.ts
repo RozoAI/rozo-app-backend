@@ -79,7 +79,12 @@ export const dualAuthMiddleware = async (c: Context, next: Next) => {
     // Add authenticated data to context
     c.set("dynamicId", userProviderId); // Keep the key name for compatibility
     c.set("isPrivyAuth", privySuccess);
-    c.set("supabase", createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY));
+    c.set("supabase", createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    }));
 
   } catch (error) {
     console.error("Authentication middleware error:", error);

@@ -46,7 +46,7 @@ interface DaimoWebhookEvent {
       orderDate: string;
       webhookUrl: string;
       block_number: number;
-      daimoOrderId: string;
+      orderNumber: string;
       from_address: string;
       actual_amount: string;
       merchantToken: string;
@@ -154,7 +154,12 @@ serve(async (req: Request) => {
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
 
     // Parse webhook payload
     const webhookEvent = await req.json();
@@ -185,13 +190,13 @@ serve(async (req: Request) => {
       return new Response("Invalid payload", { status: 400 });
     }
 
-    // Find order or deposit by number using metadata.daimoOrderId
+    // Find order or deposit by number using metadata.orderNumber
     let existingOrder: OrderRecord | null = null;
     let tableName = "orders";
-    const orderNumber = webhookEvent.payment.metadata?.daimoOrderId;
+    const orderNumber = webhookEvent.payment.metadata?.orderNumber;
 
     if (!orderNumber) {
-      console.error("Missing daimoOrderId in webhook metadata");
+      console.error("Missing orderNumber in webhook metadata");
       return new Response("Missing order number", { status: 400 });
     }
 

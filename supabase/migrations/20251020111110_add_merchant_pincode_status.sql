@@ -14,11 +14,22 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 -- Add PIN code and status fields to merchants table
-ALTER TABLE "public"."merchants" ADD COLUMN "pin_code_hash" TEXT;
-ALTER TABLE "public"."merchants" ADD COLUMN "pin_code_attempts" INTEGER DEFAULT 0;
-ALTER TABLE "public"."merchants" ADD COLUMN "pin_code_blocked_at" TIMESTAMP WITH TIME ZONE;
-ALTER TABLE "public"."merchants" ADD COLUMN "pin_code_last_attempt_at" TIMESTAMP WITH TIME ZONE;
-ALTER TABLE "public"."merchants" ADD COLUMN "status" TEXT DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE', 'PIN_BLOCKED'));
+ALTER TABLE "public"."merchants" ADD COLUMN IF NOT EXISTS "pin_code_hash" TEXT;
+ALTER TABLE "public"."merchants" ADD COLUMN IF NOT EXISTS "pin_code_attempts" INTEGER DEFAULT 0;
+ALTER TABLE "public"."merchants" ADD COLUMN IF NOT EXISTS "pin_code_blocked_at" TIMESTAMP WITH TIME ZONE;
+ALTER TABLE "public"."merchants" ADD COLUMN IF NOT EXISTS "pin_code_last_attempt_at" TIMESTAMP WITH TIME ZONE;
+
+-- Add status column with check constraint conditionally
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'merchants' 
+        AND column_name = 'status'
+    ) THEN
+        ALTER TABLE "public"."merchants" ADD COLUMN "status" TEXT DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE', 'PIN_BLOCKED'));
+    END IF;
+END $$;
 
 RESET ALL;
 
