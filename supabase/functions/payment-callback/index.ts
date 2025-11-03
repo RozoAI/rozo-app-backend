@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { pushNotification } from "./pusher.ts";
+import { sendNotificationToDevices } from "../../_shared/firebase.ts";
 
 // Payment status enum matching your database
 enum PaymentStatus {
@@ -437,6 +438,45 @@ async function handleWebhookType(
       console.log(
         `Payment completed for order ${orderId}: destination tx ${webhook.payment.metadata?.transaction_hash} on chain ${webhook.payment.payinchainid}`,
       );
+
+      // Send Firebase Notification only for orders
+      if (order.order_id) {
+        const { data: devices, error: devicesError } = await supabase
+        .from('merchant_devices')
+        .select('fcm_token')
+        .eq('merchant_id', order.merchant_id)
+
+        if (devicesError || !devices || devices.length === 0) {
+          console.error("Failed to fetch devices:", devicesError);
+        } else if (devices && devices.length > 0) {
+          const tokens = devices?.map(d => d.fcm_token) || [];
+
+          try {
+            // Send to all devices
+            const result = await sendNotificationToDevices(
+              tokens,
+              'Payment Received',
+              `You received ${order.display_currency} ${order.display_amount} from Order #${orderNumber}`,
+              {
+                orderId: orderId,
+                type: 'PAYMENT_RECEIVED',
+                action: 'OPEN_TRANSACTION'
+                deepLink: 'rozo://orders',
+                payment: webhook.payment,
+              }
+            )
+        
+            console.log(`Notification sent to ${result?.successCount} devices`)
+        
+            if (result?.failureCount > 0) {
+              console.log(`Failed to send to ${result.failureCount} devices`)
+            }
+          } catch (error) {
+            console.error('Failed to send notification:', error)
+          }
+        }
+      }
+
       const paymentCompletedNotification = await pushNotification(
         order.merchant_id,
         webhookEvent,
