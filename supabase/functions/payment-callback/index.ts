@@ -46,7 +46,7 @@ interface DaimoWebhookEvent {
       orderDate: string;
       webhookUrl: string;
       block_number: number;
-      daimoOrderId: string;
+      orderNumber: string;
       from_address: string;
       actual_amount: string;
       merchantToken: string;
@@ -190,13 +190,13 @@ serve(async (req: Request) => {
       return new Response("Invalid payload", { status: 400 });
     }
 
-    // Find order or deposit by number using metadata.daimoOrderId
+    // Find order or deposit by number using metadata.orderNumber
     let existingOrder: OrderRecord | null = null;
     let tableName = "orders";
-    const orderNumber = webhookEvent.payment.metadata?.daimoOrderId;
+    const orderNumber = webhookEvent.payment.metadata?.orderNumber;
 
     if (!orderNumber) {
-      console.error("Missing daimoOrderId in webhook metadata");
+      console.error("Missing orderNumber in webhook metadata");
       return new Response("Missing order number", { status: 400 });
     }
 

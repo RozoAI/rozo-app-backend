@@ -120,7 +120,7 @@ export async function createDaimoPaymentLink({
       },
       externalId: orderNumber || "",
       metadata: {
-        daimoOrderId: orderNumber || "",
+        orderNumber: orderNumber || "",
         intent: intent || "Pay",
         items: [
           { name: isOrder ? "Order Number" : "Deposit Number", description: orderNumber },

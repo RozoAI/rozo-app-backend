@@ -432,13 +432,24 @@ async function insertOrderRecord(
     const expiresAt = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes
 
     const { redirect_uri, preferred_token_id, ...rest } = orderData;
+    const destinationAddress = merchant.default_token_id === "USDC_XLM"
+      ? merchant.stellar_address
+      : merchant.wallet_address;
+
+    if (!destinationAddress) {
+      return {
+        success: false,
+        error: "Destination address not found",
+      };
+    }
+
     const orderToInsert: Order = {
       ...rest,
       number: orderNumber,
       merchant_id: merchant.merchant_id,
       payment_id: paymentDetail.id,
       merchant_chain_id: destinationToken.chain_id,
-      merchant_address: merchant.wallet_address,
+      merchant_address: destinationAddress,
       required_amount_usd: formattedUsdAmount,
       required_token: destinationToken.token_address,
       preferred_token_id: preferred_token_id,
