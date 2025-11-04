@@ -149,15 +149,23 @@ export async function sendNotificationToDevices(
     apns: {
       payload: {
         aps: {
+          alert: {
+              title: title,
+              body: body
+          },
           sound: 'default',
           badge: 1
         }
+      },
+      headers: {
+        "apns-priority": "10"
       }
     },
     android: {
       priority: 'high',
       notification: {
-        sound: 'default'
+        sound: 'default',
+        channelId: "rozo-notifications"
       }
     }
   }

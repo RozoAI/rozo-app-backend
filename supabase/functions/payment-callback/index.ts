@@ -319,7 +319,7 @@ serve(async (req: Request) => {
     );
 
     // Handle specific webhook types
-    await handleWebhookType(webhookEvent, existingOrder);
+    await handleWebhookType(supabase, webhookEvent, existingOrder);
 
     return new Response("Webhook processed successfully", { status: 200 });
   } catch (error) {
@@ -415,6 +415,7 @@ function validatePaymentDetails(
  * Handles specific logic for each webhook type
  */
 async function handleWebhookType(
+  supabase: any,
   webhook: DaimoWebhookEvent,
   order: OrderRecord,
 ): Promise<void> {
@@ -460,7 +461,7 @@ async function handleWebhookType(
               {
                 orderId: orderId,
                 type: 'PAYMENT_RECEIVED',
-                action: 'OPEN_TRANSACTION'
+                action: 'OPEN_TRANSACTION',
                 deepLink: 'rozo://orders',
                 payment: webhook.payment,
               }
