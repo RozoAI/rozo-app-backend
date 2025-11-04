@@ -98,6 +98,7 @@ npx supabase start
 ```
 
 This will start:
+
 - PostgreSQL database
 - Supabase API
 - Edge Functions runtime
@@ -121,6 +122,7 @@ npx supabase functions serve --env-file .env.local
 ```
 
 Functions will be available at:
+
 - `http://localhost:54321/functions/v1/merchants`
 - `http://localhost:54321/functions/v1/orders`
 - `http://localhost:54321/functions/v1/deposits`
@@ -258,11 +260,11 @@ The webhook endpoint validates incoming requests:
 
 ```typescript
 // Webhook authentication (currently disabled for testing)
-const authHeader = req.headers.get('Authorization');
-const expectedToken = Deno.env.get('DAIMO_WEBHOOK_SECRET');
+const authHeader = req.headers.get("Authorization");
+const expectedToken = Deno.env.get("DAIMO_WEBHOOK_SECRET");
 
 if (providedToken !== expectedToken) {
-  return new Response('Unauthorized: Invalid token', { status: 401 });
+  return new Response("Unauthorized: Invalid token", { status: 401 });
 }
 ```
 
@@ -280,6 +282,7 @@ npx supabase functions logs payment-callback
 ### 2. Database Monitoring
 
 Monitor database performance in Supabase dashboard:
+
 - Query performance
 - Connection usage
 - Index usage
@@ -288,6 +291,7 @@ Monitor database performance in Supabase dashboard:
 ### 3. Performance Metrics
 
 Key metrics to monitor:
+
 - Order creation time (<200ms target)
 - Currency cache hit rate (>80% target)
 - Database query count (minimize)
