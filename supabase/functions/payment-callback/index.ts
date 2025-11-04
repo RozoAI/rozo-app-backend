@@ -457,13 +457,12 @@ async function handleWebhookType(
             const result = await sendNotificationToDevices(
               tokens,
               'Payment Received',
-              `You received ${order.display_currency} ${order.display_amount} from Order #${orderNumber}`,
+              `You received ${order.display_currency} ${order.display_amount} from Order #${order.number}`,
               {
                 orderId: orderId,
                 type: 'PAYMENT_RECEIVED',
-                action: 'OPEN_TRANSACTION',
-                deepLink: 'rozo://orders',
-                payment: webhook.payment,
+                action: 'OPEN_BALANCE',
+                deepLink: 'rozo://balance',
               }
             )
         
