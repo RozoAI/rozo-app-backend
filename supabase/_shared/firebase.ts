@@ -17,7 +17,7 @@ export function initFirebase(): App {
   }
 
   // Method 1: Try to load from JSON file (recommended)
-  try {
+/*   try {
     const serviceAccountPath = new URL('./firebase-service-account.json', import.meta.url).pathname
     const serviceAccount = JSON.parse(Deno.readTextFileSync(serviceAccountPath)) as ServiceAccount
 
@@ -29,7 +29,7 @@ export function initFirebase(): App {
     return firebaseApp
   } catch (error) {
     console.log('Firebase JSON file not found, trying environment variables...')
-  }
+  } */
 
   // Method 2: Fall back to environment variables
   const projectId = Deno.env.get('FIREBASE_PROJECT_ID')

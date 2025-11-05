@@ -466,10 +466,8 @@ async function handleWebhookType(
               }
             )
         
-            console.log(`Notification sent to ${result?.successCount} devices`)
-        
             if (result?.failureCount > 0) {
-              console.log(`Failed to send to ${result.failureCount} devices`)
+              console.log(`Failed to send to ${result.failureCount} devices: ${JSON.stringify(result.responses)}`)
             }
           } catch (error) {
             console.error('Failed to send notification:', error)
