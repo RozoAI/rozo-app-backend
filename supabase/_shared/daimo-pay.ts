@@ -129,6 +129,7 @@ export async function createDaimoPaymentLink({
         payer: {},
         orderDate: new Date().toISOString(),
         merchantToken: destinationAddress || "",
+        forMerchant: true,
         callbackUrl: "https://iufqieirueyalyxfzszh.supabase.co/functions/v1/payment-callback"
       },
       preferredChain: preferredToken.chain_id,

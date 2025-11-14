@@ -4,7 +4,6 @@
 *.sublime-workspace
 
 # Runtime data
-.env*
 
 # Dependency directories
 node_modules
@@ -19,3 +18,4 @@ jspm_packages
 .temp
 # Firebase service account credentials (never commit!)
 **/firebase-service-account.json
+config.bat
